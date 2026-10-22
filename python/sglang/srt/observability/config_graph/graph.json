@@ -1114,11 +1114,12 @@
       ],
       "confounders": [
         "Host Engram footprint; NUMA/huge pages; device victims; returning-turn locality; storage backend; write policy.",
-        "Active KV usage excludes evictable cache. Device eviction can preserve data in L2. L2 host eviction is distinct from device tokens dropped without backup. Cache TP labels use attention coordinates under DP attention."
+        "Active KV usage excludes evictable cache. Device eviction can preserve data in L2. L2 host eviction is distinct from device tokens dropped without backup. Cache TP labels use attention coordinates under DP attention.",
+        "DeepSeekV4 host-used/total gauges describe logical FULL anchors; the anchor itself owns no KV tensor. Physical compressed/SWA pools and process/cgroup memory need separate accounting."
       ],
       "hypothesis": "Larger host cache helps retention only if there is host memory and useful reuse; faster copy can help when loadback lies on the critical path.",
       "next_test": "Hold hit distribution constant for IO backend comparison; inspect pending gates and H2D time, not just end-of-run throughput.",
-      "remaining_gap": "No exact exposed-vs-overlapped H2D time or per-request transfer attribution. UnifiedRadixCache.evict_host returns component-level freed tokens without a dedicated wrapper observation, so device-drop counters do not establish L2 host eviction volume.",
+      "remaining_gap": "No exact exposed-vs-overlapped H2D time or per-request transfer attribution. UnifiedRadixCache.evict_host returns component-level freed tokens without a dedicated wrapper observation, so device-drop counters do not establish L2 host eviction volume. Existing generic host occupancy lacks per-component pool/byte coverage; source-selected anchor saturation cannot measure every physical pool.",
       "evidence": "Code-audited; full GB200 baseline shows growing host occupancy and ongoing device eviction/backup beyond15minutes. All observed device-without-backup drop deltas remain0 through21minutes; later host-retention effects still under observation."
     },
     {
@@ -1238,7 +1239,7 @@
         "anchor": "sglang:hicache_host_used_tokens"
       },
       "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "interpretation": "Scheduler reports token_to_kv_pool_host or full_kv_pool_host logical_size/available_size, not aggregate host bytes or every hybrid component. DeepSeekV4 uses LogicalHostPool FULL page anchors with no KV tensor; compressed/SWA side pools hold physical data.100% logical-anchor occupancy does not establish100% physical RAM or every host component full."
     },
     {
       "id": "metric.hicache_host_total_tokens",
@@ -1249,7 +1250,7 @@
         "anchor": "sglang:hicache_host_total_tokens"
       },
       "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "interpretation": "Scheduler reports token_to_kv_pool_host or full_kv_pool_host logical_size/available_size, not aggregate host bytes or every hybrid component. DeepSeekV4 uses LogicalHostPool FULL page anchors with no KV tensor; compressed/SWA side pools hold physical data.100% logical-anchor occupancy does not establish100% physical RAM or every host component full."
     },
     {
       "id": "metric.load_back_duration_seconds",

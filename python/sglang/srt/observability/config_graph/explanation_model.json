@@ -233,7 +233,8 @@
       "alternatives": [
         "Context/branch mix and routing can change cache reuse without a capacity limit.",
         "Host restore or blocking backup may matter even when data is retained.",
-        "Cache TP coordinates differ from scheduler TP coordinates under DPattention."
+        "Cache TP coordinates differ from scheduler TP coordinates under DPattention.",
+        "DSV4 generic host-used/total gauges measure logical FULL anchors, which own no KV tensor; compressed/SWA physical pools and total host RAM are not represented by that percentage."
       ],
       "check": "Preserve DP/attentionTP/pool labels; compare available/evictable/used tokens, host occupancy, computed versus cached input, drop deltas and operation-duration deltas across the full replay. Do not add overlapping eviction/backup durations.",
       "action": "Change host size/write policy only after the full-run evidence identifies retention or transfer cost and actual memory permits it. If host churn is ambiguous, add bounded requested/freed host-eviction summaries at evict_host and verify before a capacity intervention.",
@@ -242,7 +243,8 @@
       "status": "Existing telemetry/source semantics audited; full-hour baseline still running; no new executable instrumentation or cache config change.",
       "runtime_evidence": [
         "baseline-hour-r3 host occupancy~49\u201371% at16.5min, device eviction/backups continue, all observed hicache_dropped_tokens_total deltas0 through21min.",
-        "Cache metrics dp0\u20133/tp0 are attention-mesh labels; scheduler tp0\u20133 are global labels in this DEP4 run."
+        "Cache metrics dp0\u20133/tp0 are attention-mesh labels; scheduler tp0\u20133 are global labels in this DEP4 run.",
+        "Fullbaseline reported logical host anchors reach100% on allranks by33\u201334.5min. Existing source _log_hicache_stats, DeepSeekV4 strategy and LogicalHostPool establish scope. No all-component/physical100%claim."
       ]
     },
     {
