@@ -39,7 +39,8 @@
               "environment",
               "mechanism",
               "metric",
-              "decision_log"
+              "decision_log",
+              "log_line"
             ]
           },
           "source": {

@@ -1608,7 +1608,7 @@
         "anchor": "sglang:cuda_graph_passes_total"
       },
       "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "interpretation": "Counter modes decode_cuda_graph/decode_none are emitted by decode result processing; prefill_cuda_graph/prefill_none by prefill statistics. Compare per-rank window deltas within decode mode before changing decode capture cap; eager target/draft event totals mix modes and are insufficient. This counter does not identify the failed eligibility predicate."
     },
     {
       "id": "metric.is_cuda_graph",
@@ -2362,8 +2362,8 @@
         "Table sharing scope per worker vs node; CPU binding actually applied; huge pages; host cache size; collective width."
       ],
       "hypothesis": "More HBM may improve concurrency, but host access can worsen TPOT; increasing host cache can cause host OOM.",
-      "next_test": "Record actual affinity, huge-page backing, RSS and per-node host budget; compare fixed request shapes and cache state.",
-      "remaining_gap": "No direct Engram exposed-time metric or effective placement receipt here. Use OS/profiler evidence; launch flag is not verification.",
+      "next_test": "Record actual CPU affinity, per-node page placement, per-layer huge-page coverage and host budget before workload. Keep staging/checksum I/O outside comparison windows; compare fixed shapes and cache state before changing layout or binding.",
+      "remaining_gap": "Existing per-layer startup logs report layout, resident MiB, huge-page MiB and collapse errors. They do not measure exposed lookup time or prove effective CPU/NUMA placement; collect OS placement and competing file-I/O evidence.",
       "evidence": "code-audited; causal performance effect requires paired experiment"
     },
     {
@@ -2888,6 +2888,17 @@
       ],
       "availability": "tuning_observation_interval > 0; event-driven window",
       "interpretation": "One true interval-gate return, remaining value after decrement. waiting_requests is local queue length and chunk_pending is 0/1. Repeated encounters are not unique requests or blocked time."
+    },
+    {
+      "id": "log.engram_host_backing",
+      "kind": "log_line",
+      "name": "engram host table backing receipt",
+      "source": {
+        "path": "python/sglang/srt/layers/engram.py",
+        "anchor": "MiB in huge pages"
+      },
+      "availability": "Existing INFO once after dirty host-table load; WARNING when no huge pages, collapse errno logged on failure.",
+      "interpretation": "Per-layer/rank layout, resident and huge-page MiB; unequal coverage is a possible translation/placement confounder, not a measured slowdown. Concurrent checkpoint I/O can compete with page-cache reclamation."
     }
   ],
   "edges": [
@@ -4217,6 +4228,11 @@
       "source": "mechanism.prefill_decode_cadence",
       "target": "metric.num_queue_reqs",
       "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "mechanism.engram_numa",
+      "target": "log.engram_host_backing",
+      "relation": "observed_by"
     }
   ]
 }

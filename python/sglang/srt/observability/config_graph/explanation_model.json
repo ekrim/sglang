@@ -122,6 +122,30 @@
       "reject_if": "GPU batches merely reshuffle while cache misses or end-to-end latency rise.",
       "status": "Source-backed hypothesis; runtime pending",
       "runtime_evidence": []
+    },
+    {
+      "id": "host-table-backing",
+      "graph_nodes": [
+        "mechanism.engram_numa",
+        "log.engram_host_backing",
+        "config.SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT",
+        "config.SGLANG_NUMA_BIND_V2"
+      ],
+      "observation": "Host-table startup shows lower huge-page coverage on some ranks, optionally with MADV_COLLAPSE errno12.",
+      "diagnosis": "Actual table backing differs despite identical layout settings; address translation and placement may confound rank latency.",
+      "alternatives": [
+        "Concurrent snapshot persistence/checksum or loader reads repopulate file cache.",
+        "NUMA-local contiguous memory or process affinity differs.",
+        "The workload may not expose host lookups enough for coverage to matter."
+      ],
+      "check": "Read per-layer/rank coverage, /proc scheduler affinity and NUMA placement, host/cgroup headroom and staging completion. Correlate with matched-rank forward latency before attribution.",
+      "action": "First start a fresh deployment after staging/checksum I/O completes, holding server configuration fixed. Change binding/layout only if placement evidence supports a separate controlled trial.",
+      "expected": "If temporary staging pressure caused the backing skew, coverage may improve without a serving-config change.",
+      "reject_if": "Coverage stays skewed or improves without a latency benefit; do not claim a scheduler bottleneck or host-lookup speedup from the receipt alone.",
+      "status": "Startup backing skew observed; causal performance effect unverified",
+      "runtime_evidence": [
+        "native-r0 server.log at2026-10-22T17:28:33Z..17:28:35Z: layer14 rank2=30%, rank3=32%, ranks0/1=100%; immutable snapshot persistence still active."
+      ]
     }
   ],
   "policy": {

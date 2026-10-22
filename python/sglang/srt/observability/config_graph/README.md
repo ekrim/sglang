@@ -128,3 +128,5 @@ Local validation covers recorder contracts and selected production branches usin
 ## Phase 3 explanation companion
 
 See `explanation_model.json` for observation -> competing diagnoses -> discriminating checks -> config intervention rules. Evidence status is explicit; source-backed hypotheses are not measured throughput wins. The GB200 starting recipe uses an explicit prefill/decode interval, now mapped separately from the prefill delayer and token-budget gates.
+
+Existing textual startup receipts use `kind: log_line`; structured TuningRecorder events use `decision_log` and validate against EVENTS. Both require a checked producer source anchor. Host-table backing receipts are existing logs, not new runtime instrumentation. Graph-use metric modes separate prefill from decode; aggregate eager event counts still mix modes.
