@@ -11,17 +11,37 @@
         "path": "python/sglang/srt/managers/schedule_policy.py",
         "anchor": "def budget_state"
       },
-      "behavior": "The adder continues the unfinished request, then scans waiting requests. Compute budgets charge extend plus replay rows. Exhaustion can stop a pass while KV is still free.",
+      "behavior": "The adder continues the unfinished request, then scans waiting requests. Compute budgets charge extend plus replay rows. budget_state checks memory first, input exhaustion second, then chunk exhaustion, so input events can mask a simultaneously exhausted chunk budget. In the normal chunked path, shape selection fits chunk/KV limits; max_prefill_tokens stops subsequent admission and is not a universal hard bound on an individual chunk.",
       "conditions": [
         "AGG or PD prefill; normal PrefillAdder path."
       ],
       "confounders": [
-        "DP divides declared chunk size; mixed decode consumes budget; page alignment; replay rows; max request limits; one unchunked request can exceed nominal input cap."
+        "DP divides declared chunk size; mixed decode consumes budget; page alignment; replay rows; max request limits; one unchunked request can exceed nominal input cap.",
+        "Equal input and chunk limits receive equal compute charges; the emitted input-budget event does not identify which cap alone should change. Raising only the input cap can merely expose the chunk-budget event without increasing admitted work.",
+        "MegaMoE startup validates aligned effective per-rank chunk size against SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK; that environment cap also sizes symmetric buffers. Increasing chunk size can require a coupled workspace change with additional memory demand."
       ],
       "hypothesis": "If token budget binds with queued work and spare KV, a larger batch may improve P capacity; it may increase TTFT/ITL and workspace demand.",
-      "next_test": "At fixed per-rank request cap, raise only the effective token budget. Compare admitted extend/replay rows, P stage time, queue slope and live decode activity.",
+      "next_test": "First compare resolved input/chunk limits and admitted residuals. Test a coherent effective chunk/workspace budget only if full-run evidence supports more prefill work; document coupled prerequisites as one budget intervention, retain sufficient physical memory, and compare useful prefill service with decode/latency cost. An event-name change alone is not improvement.",
       "remaining_gap": "Not all specialized DLLM/ignore-EOS stops have reason logs; inspect residual budget/queue evidence.",
-      "evidence": "code-audited; causal performance effect requires paired experiment"
+      "evidence": "code-audited; causal performance effect requires paired experiment",
+      "source_audit": [
+        {
+          "path": "python/sglang/srt/managers/scheduler.py",
+          "anchor": "adder = self.get_prefill_adder_class()("
+        },
+        {
+          "path": "python/sglang/srt/managers/schedule_policy.py",
+          "anchor": "def _select_prefill_admission"
+        },
+        {
+          "path": "python/sglang/srt/arg_groups/mega_moe_hook.py",
+          "anchor": "if max_tokens_per_rank < required_tokens_per_rank:"
+        },
+        {
+          "path": "python/sglang/srt/layers/moe/mega_moe.py",
+          "anchor": "def _get_mega_moe_symm_buffer("
+        }
+      ]
     },
     {
       "id": "config.chunked_prefill_size",
@@ -4534,6 +4554,16 @@
       "source": "mechanism.tree_core_selection",
       "target": "log.unified_tree_core",
       "relation": "observed_by"
+    },
+    {
+      "source": "config.SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
+      "target": "mechanism.prefill_tokens",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "mechanism.moe_backend",
+      "relation": "interacts_with"
     }
   ]
 }

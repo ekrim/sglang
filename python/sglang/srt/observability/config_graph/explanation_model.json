@@ -33,21 +33,29 @@
       "id": "prefill-compute-budget",
       "graph_nodes": [
         "config.chunked_prefill_size",
-        "mechanism.prefill_tokens"
+        "mechanism.prefill_tokens",
+        "config.max_prefill_tokens",
+        "config.SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
+        "mechanism.moe_backend"
       ],
       "observation": "Queued work with input/chunk budget encounters and available KV; explicit interval and request caps are not the dominant obstruction.",
-      "diagnosis": "The admission compute budget limits prefill batch formation.",
+      "diagnosis": "A prefill compute budget stops further admission, but the first emitted gate does not uniquely identify a configuration knob: input exhaustion precedes chunk exhaustion.",
       "alternatives": [
         "Replay rows consume the same budget.",
         "DP divides declared chunk size.",
-        "Post-admission checks are not rejected requests."
+        "Post-admission checks are not rejected requests.",
+        "Input and chunk limits can exhaust together; raising max_prefill_tokens alone may change only the gate name.",
+        "Normal chunked shape selection uses chunk/KV limits, so max_prefill_tokens is not a universal per-forward hard ceiling.",
+        "Larger effective chunks require sufficient MegaMoE token capacity and symmetric-buffer memory."
       ],
-      "check": "Read tuning_scheduler_config per rank and admitted extend/replay rows; separate input budget from chunk budget and workspace limits.",
-      "action": "Change only the binding effective token cap within verified workspace limits; keep the other cap fixed.",
+      "check": "Read resolved per-rank input/chunk limits and prefill.admitted residuals together. Inspect gate order and the actual normal/chunk-continuation path. Check aligned chunk size against the MegaMoE env cap and physical memory before proposing a larger budget.",
+      "action": "If complete-run evidence supports increasing prefill work, change a coherent effective chunk budget with only its required input/workspace prerequisites. Record any coupled flags explicitly as one budget intervention; do not treat an input-to-chunk event-name change as added capacity.",
       "expected": "Larger useful admitted batches and increased prefill service, potentially worse TTFT/ITL.",
       "reject_if": "Service does not improve, memory guard trips, or long-context coverage/errors worsen.",
-      "status": "Source-backed hypothesis; runtime pending",
-      "runtime_evidence": []
+      "status": "Source-backed interaction; equal residuals observed in the live C384 interval18 trial; larger-budget performance effect untested",
+      "runtime_evidence": [
+        "GB200 cadence18-hour-r5b window13 (18\u201319.5min): per-rank prefill.admitted input_remaining and chunk_remaining aggregates match, minima0; extend max16384 and replay sum0. This is a bounded window, not a full-run score or proof that raising the budget helps."
+      ]
     },
     {
       "id": "request-row-cap",
