@@ -4824,7 +4824,7 @@
         "anchor": "schedule_policy:"
       },
       "declared_default": "'fcfs'",
-      "review_status": "not_causally_audited"
+      "review_status": "causal_mapping"
     },
     {
       "id": "config.enable_priority_scheduling",

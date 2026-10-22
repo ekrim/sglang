@@ -335,6 +335,31 @@
         "Fullbaseline-hour-r3 andload384-hour-r4 logs showPythonUnifiedTreeCore onall4ranks after cargoqueryfailure. R5 sourcehashesmatch but compiler1.92.0 queries succeed, imagebuildmode never and overlaybinding absent; startupfails at22:10:18UTC. evidence/cadence18-hour-r5-runtime-backend.json preservescorrectworkspace query.",
         "cadence18-hour-r5b at2026-10-22T22:16:04Z: all4 ranks logged Tree Core: UnifiedTreeCore. Explicit Python selection reproduces the actual prior implementation without copying/building a Rust binary. Startup receipt: campaign evidence/cadence18-hour-r5b-startup-check.json."
       ]
+    },
+    {
+      "id": "prefill-ordering-and-aged-queues",
+      "graph_nodes": [
+        "config.schedule_policy",
+        "mechanism.prefill_ordering",
+        "metric.queue_time_seconds",
+        "metric.time_to_first_token_seconds",
+        "log.shortest_prefill_order"
+      ],
+      "observation": "Persistent mixed-work queues and long first-forward waits coexist with many fast requests; client TTFT tails are much longer than connection/send overhead.",
+      "diagnosis": "Admission ordering may repeatedly favor inexpensive uncached work. Shortest-prefill-first uses age only as a tie-breaker; initial queue waits are distinct from later chunk execution and router delay.",
+      "alternatives": [
+        "Cadence, token/capacity gates or cache readiness can delay admission independent of sorting.",
+        "An increase in observed long waits can mean old backlog is finally being admitted; still-waiting requests remain censored.",
+        "Closed-loop trajectory progress and cache locality change with policy; total input length is not uncached work."
+      ],
+      "check": "Use source-defined queue histogram bucket/count/sum deltas by rank and observation time, plus finalized client request-start strata and cancellations. The sampled shortest_uncached log describes the first sorted request, not the oldest. Verify HRRN processed-token arrival/accounting path before proposing it.",
+      "action": "After full-run diagnosis, consider a single schedule_policy trial at unchanged cadence, concurrency and budgets. Choose a policy with an explicit ordering/aging rationale; retain canonical AgentX replay and fresh serving state. Add bounded oldest-age/work-band observations if admitted histograms cannot resolve outstanding backlog.",
+      "expected": "An aging/order change should alter which work is admitted, reduce persistent old backlog or improve finalized tails, with possible loss of prefix locality and throughput.",
+      "reject_if": "No improvement in finalized tails/backlog or trajectory progress, or unacceptable loss of qualified total/output throughput or latency Pareto position. Do not accept based only on fewer emitted long-wait observations.",
+      "status": "Existing histogram confirms scheduler queue tails; policy-change benefit untested",
+      "runtime_evidence": [
+        "First30min retained windows (~1600s counter coverage): C256 interval24 has16166 first-forward observations and3 waits>300s; C384 interval24 has19419 and59; C384 interval18 has19699 and84. These are observation-time cohorts, not matched requests or full1800s totals. C384 interval24 is unqualified after finalization loss."
+      ]
     }
   ],
   "policy": {
