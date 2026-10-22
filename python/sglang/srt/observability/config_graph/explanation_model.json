@@ -167,6 +167,28 @@
       "runtime_evidence": [
         "baseline-r1 server.log 2026-10-22 11:02:50\u201311:03:00 Pacific: TP0 capture receipts despite prefill backend disabled."
       ]
+    },
+    {
+      "id": "workload-pressure-drift",
+      "graph_nodes": [
+        "mechanism.routing",
+        "mechanism.request_admission",
+        "mechanism.prefill_decode_cadence",
+        "metric.num_queue_reqs"
+      ],
+      "observation": "Three early profiling windows have small batches and near-empty queues; later canonical idle-cap advances coincide with more long requests and larger queues.",
+      "diagnosis": "Offered work changes within the profiling phase. Early consistent windows can still represent only a light-load regime.",
+      "alternatives": [
+        "Client CPU/transport saturation; routing skew; server admission limits. Check client CPU and per-rank arrivals/gates rather than assuming one."
+      ],
+      "check": "Align benchmark phase and idle-cap events with request-length distributions, active batches, queues, cache rates and admission events.",
+      "action": "Defer concurrency or server-cap changes until evidence covers the new workload pressure. Keep canonical idle caps, corpus and warmup unchanged.",
+      "expected": "A useful diagnosis remains supported after accounting for offered-load changes; measured server bottlenecks recur under comparable pressure.",
+      "reject_if": "Pressure shifts invalidate the earlier diagnosis, or a different gate appears. Reopen the hypothesis before applying a change.",
+      "status": "Observed baseline-r1; early supply hypothesis deferred before any intervention",
+      "runtime_evidence": [
+        "baseline-r1-profile-w1/w2/w3 versus client idle-cap events after 2026-10-22T18:15Z; baseline-r1-client-cpu.json shows 0.50 CPU core used with 8 allowed."
+      ]
     }
   ],
   "policy": {
