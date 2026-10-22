@@ -1410,8 +1410,8 @@
         "path": "python/sglang/srt/observability/metrics_collector.py",
         "anchor": "sglang:dp_attention_token_imbalance_ratio"
       },
-      "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "availability": "Requires metrics collection and SGLANG_ENABLE_METRICS_DP_ATTENTION=1 at process startup; initialized series can remain zero with producer disabled. DP balance also requires multiple ranks and a non-skipped gather; health-check-only work is excluded.",
+      "interpretation": "Verify producer enablement and histogram count deltas before interpreting zero. Balance max/mean ratio is reported by attention DP0/TP0/CP0 only; synchronization statistics are rank-local. Sync duration includes metadata preparation, collective and CPU transfer, not pure network time."
     },
     {
       "id": "metric.dp_attention_sync_wait_seconds",
@@ -1421,8 +1421,8 @@
         "path": "python/sglang/srt/observability/metrics_collector.py",
         "anchor": "sglang:dp_attention_sync_wait_seconds"
       },
-      "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "availability": "Requires metrics collection and SGLANG_ENABLE_METRICS_DP_ATTENTION=1 at process startup; initialized series can remain zero with producer disabled. DP balance also requires multiple ranks and a non-skipped gather; health-check-only work is excluded.",
+      "interpretation": "Verify producer enablement and histogram count deltas before interpreting zero. Balance max/mean ratio is reported by attention DP0/TP0/CP0 only; synchronization statistics are rank-local. Sync duration includes metadata preparation, collective and CPU transfer, not pure network time."
     },
     {
       "id": "metric.dp_cooperation_realtime_tokens_total",
@@ -1432,8 +1432,8 @@
         "path": "python/sglang/srt/observability/metrics_collector.py",
         "anchor": "sglang:dp_cooperation_realtime_tokens_total"
       },
-      "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "availability": "Requires metrics collection and SGLANG_ENABLE_METRICS_DP_ATTENTION=1 at process startup; initialized series can remain zero with producer disabled. DP balance also requires multiple ranks and a non-skipped gather; health-check-only work is excluded.",
+      "interpretation": "Classifies computed/cache/decode token deltas by cooperation state only when dp_cooperation_info is supplied. Missing classification does not imply no cooperation; ordinary realtime_tokens_total is independent."
     },
     {
       "id": "metric.dp_attention_tokens_total",
@@ -1443,8 +1443,8 @@
         "path": "python/sglang/srt/observability/metrics_collector.py",
         "anchor": "sglang:dp_attention_tokens_total"
       },
-      "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "availability": "Requires metrics collection and SGLANG_ENABLE_METRICS_DP_ATTENTION=1 at process startup; initialized series can remain zero with producer disabled. DP balance also requires multiple ranks and a non-skipped gather; health-check-only work is excluded.",
+      "interpretation": "Verify producer enablement and histogram count deltas before interpreting zero. Balance max/mean ratio is reported by attention DP0/TP0/CP0 only; synchronization statistics are rank-local. Sync duration includes metadata preparation, collective and CPU transfer, not pure network time."
     },
     {
       "id": "event.graph.prefill.dp_vote",
@@ -2212,7 +2212,7 @@
         "anchor": "sglang:scheduler_stage_seconds_total"
       },
       "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "interpretation": "Exclusive scheduler wall time by nested stage, not process CPU time or GPU occupancy. Forward-overlap labels sample span endpoints; none also means device timing unavailable, full can span a GPU gap, none can span a complete forward. Do not interpret these labels as exposed/overlapped seconds. Pair with scheduler_process_cpu_seconds_total and explicitly enabled device timing when needed."
     },
     {
       "id": "metric.scheduler_process_cpu_seconds_total",
@@ -2223,7 +2223,7 @@
         "anchor": "sglang:scheduler_process_cpu_seconds_total"
       },
       "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "interpretation": "Process CPU-time delta; can include multiple process threads and differs from exclusive scheduler wall-stage accounting. Do not label scheduler wall-stage time as CPU service time."
     },
     {
       "id": "metric.scheduler_idle_seconds_total",
@@ -2508,7 +2508,7 @@
       "confounders": [
         "Decode log interval; idle/long forwards; completion-biased request histograms; sampling window; duplicate TP counts; warmup."
       ],
-      "hypothesis": "Short live windows can reject a wrong hypothesis earlier than a full benchmark, but cannot replace a representative AgentX scored run.",
+      "hypothesis": "Full canonical replay establishes workload and cache regimes; later calibrated live sections may reject hypotheses earlier, but cannot replace qualified full-run scoring.",
       "next_test": "Collect 10-second decision windows and 5-second scrapes; align steady-state windows, test telemetry overhead on/off, and preserve original benchmark validation.",
       "remaining_gap": "Decision logs are event-driven and synchronous on flush; no independent heartbeat, no proof an absent event means the system is healthy.",
       "evidence": "code-audited; causal performance effect requires paired experiment"
@@ -3037,6 +3037,16 @@
       },
       "availability": "Existing RadixCacheMetricsCollector, enabled with relevant cache/metrics producer.",
       "interpretation": "Logical device KV destroyed without host backup, by fixed reason and pool. It does not count ordinary host/L2 eviction. Zero does not prove no host-cache churn. Cache rank labels use attention TP/DP coordinates under DP attention; scheduler TP labels can use a different mesh."
+    },
+    {
+      "id": "config.SGLANG_ENABLE_METRICS_DP_ATTENTION",
+      "name": "SGLANG_ENABLE_METRICS_DP_ATTENTION",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_ENABLE_METRICS_DP_ATTENTION = EnvBool(False)"
+      },
+      "declared_default": "False"
     }
   ],
   "edges": [
@@ -4430,6 +4440,31 @@
     {
       "source": "mechanism.host_cache",
       "target": "metric.hicache_dropped_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.SGLANG_ENABLE_METRICS_DP_ATTENTION",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "metric.dp_attention_token_imbalance_ratio",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "metric.dp_attention_sync_wait_seconds",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "metric.dp_cooperation_realtime_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "metric.dp_attention_tokens_total",
       "relation": "observed_by"
     }
   ]

@@ -244,6 +244,32 @@
         "baseline-hour-r3 host occupancy~49\u201371% at16.5min, device eviction/backups continue, all observed hicache_dropped_tokens_total deltas0 through21min.",
         "Cache metrics dp0\u20133/tp0 are attention-mesh labels; scheduler tp0\u20133 are global labels in this DEP4 run."
       ]
+    },
+    {
+      "id": "producer-enablement-before-zero",
+      "graph_nodes": [
+        "config.SGLANG_ENABLE_METRICS_DP_ATTENTION",
+        "config.SGLANG_ENABLE_METRICS_DEVICE_TIMER",
+        "mechanism.measurement",
+        "metric.scheduler_stage_seconds_total",
+        "metric.dp_attention_token_imbalance_ratio",
+        "metric.dp_attention_sync_wait_seconds"
+      ],
+      "observation": "DP imbalance/synchronization histograms remain zero while scheduler stage labels show forward_overlap=none.",
+      "diagnosis": "These values may reflect disabled producers and unavailable device timing, rather than balanced ranks or exposed CPU bottlenecks.",
+      "alternatives": [
+        "Enabled producer with no eligible multi-rank gather or only health probes.",
+        "Rank-local reporting restrictions.",
+        "Actual low imbalance or low synchronization cost requires positive count coverage."
+      ],
+      "check": "Inspect restricted process environment and source defaults; verify eligible producer paths, reporting ranks and histogram count deltas. Stage wall time includes waiting and overlap endpoints do not measure exposed GPU gaps.",
+      "action": "Reuse available per-rank workload/cache signals first. If synchronization or overlap attribution becomes decision-critical, enable the relevant existing producer in an explicitly identified instrumentation run and measure overhead before performance comparisons.",
+      "expected": "Positive eligible count coverage and interpretable rank-local observations; unchanged serving work must be independently checked.",
+      "reject_if": "Counts remain absent, coverage is inadequate, or instrumentation changes performance enough to confound the comparison.",
+      "status": "Source-audited and producer-disabled baseline verified; no runtime flag change",
+      "runtime_evidence": [
+        "baseline-hour-r3 process855831 has both metric producer env flags unset; pinned defaults are False. Recorded histogram counts are zero and stage overlap labels none. This does not establish zero synchronization or full exposed CPU time."
+      ]
     }
   ],
   "policy": {
