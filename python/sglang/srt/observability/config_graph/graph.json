@@ -1608,7 +1608,7 @@
         "anchor": "sglang:cuda_graph_passes_total"
       },
       "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Counter modes decode_cuda_graph/decode_none are emitted by decode result processing; prefill_cuda_graph/prefill_none by prefill statistics. Compare per-rank window deltas within decode mode before changing decode capture cap; eager target/draft event totals mix modes and are insufficient. This counter does not identify the failed eligibility predicate."
+      "interpretation": "Counter modes decode_cuda_graph/decode_none are emitted by decode result processing; prefill_cuda_graph/prefill_none by prefill statistics. Compare per-rank window deltas within decode mode before changing decode capture cap; eager target/draft event totals mix modes and are insufficient. This counter does not identify the failed eligibility predicate. In DSV4, prefill_none describes whole-forward dispatch and can coexist with decoder-tail graphs; use log.decoder_tail_graph_capture to identify lazy capture, not a replay denominator."
     },
     {
       "id": "metric.is_cuda_graph",
@@ -2899,6 +2899,55 @@
       },
       "availability": "Existing INFO once after dirty host-table load; WARNING when no huge pages, collapse errno logged on failure.",
       "interpretation": "Per-layer/rank layout, resident and huge-page MiB; unequal coverage is a possible translation/placement confounder, not a measured slowdown. Concurrent checkpoint I/O can compete with page-cache reclamation."
+    },
+    {
+      "id": "config.SGLANG_DSV4_DECODER_TAIL_GRAPH_MAX_ROWS",
+      "name": "SGLANG_DSV4_DECODER_TAIL_GRAPH_MAX_ROWS",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_DSV4_DECODER_TAIL_GRAPH_MAX_ROWS"
+      }
+    },
+    {
+      "id": "config.SGLANG_DSV4_DECODER_TAIL_GRAPH_MIN_PREFILL_TOKENS",
+      "name": "SGLANG_DSV4_DECODER_TAIL_GRAPH_MIN_PREFILL_TOKENS",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_DSV4_DECODER_TAIL_GRAPH_MIN_PREFILL_TOKENS"
+      }
+    },
+    {
+      "id": "mechanism.decoder_tail_graph",
+      "kind": "mechanism",
+      "title": "Lazy decoder-tail graphs inside prefill",
+      "source": {
+        "path": "python/sglang/srt/models/deepseek_v4_replay_tail.py",
+        "anchor": "class DecoderReplayTail"
+      },
+      "behavior": "Bounded decoder replay tails can use row-bucket graphs during eager prefill; first use captures and subsequent compatible shapes replay. Whole-prefill graph disablement does not disable this mechanism.",
+      "conditions": [
+        "CUDA; tail_writes_source_kv; MAX_ROWS>0; graph-pool borrowing off; full-chunk workspace warm gate; compatible row bucket, MoE bound, replay and DP state. MIN_PREFILL_TOKENS controls breaking a tail out of a prefill graph, not the eager-prefill cap."
+      ],
+      "confounders": [
+        "Cold lazy captures consume time and memory; whole-forward prefill_none can coexist with tail-layer replay. Capture logs emit only on TP rank0 and do not count subsequent replay or fallback."
+      ],
+      "hypothesis": "Tail graph replay may reduce host launch overhead after capture; disabling it may reduce cold cost but regress steady-state service.",
+      "next_test": "Separate capture-active windows from warmed service. Only test MAX_ROWS after establishing tail coverage and relevant CPU/GPU cost; hold model, request shape and pool capacities controlled.",
+      "remaining_gap": "No fixed-cardinality replay/capture/fallback counter by row bucket and eligibility reason; existing log reports rank0 capture totals only.",
+      "evidence": "Source audit plus baseline-r1 warmup capture receipts on 2026-10-22."
+    },
+    {
+      "id": "log.decoder_tail_graph_capture",
+      "kind": "log_line",
+      "name": "Decoder tail graph capture receipt",
+      "source": {
+        "path": "python/sglang/srt/model_executor/runner/row_bucket_graph_runner.py",
+        "anchor": "%s: captured %d rows (%d segments)"
+      },
+      "availability": "Existing INFO emitted by TP rank0 for each newly captured graph.",
+      "interpretation": "Rows, segments, per-capture/cumulative wall seconds and device allocation delta. Does not count replay/fallback; does not establish every rank has identical memory cost."
     }
   ],
   "edges": [
@@ -4233,6 +4282,31 @@
       "source": "mechanism.engram_numa",
       "target": "log.engram_host_backing",
       "relation": "observed_by"
+    },
+    {
+      "source": "config.SGLANG_DSV4_DECODER_TAIL_GRAPH_MAX_ROWS",
+      "target": "mechanism.decoder_tail_graph",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_DSV4_DECODER_TAIL_GRAPH_MIN_PREFILL_TOKENS",
+      "target": "mechanism.decoder_tail_graph",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.decoder_tail_graph",
+      "target": "log.decoder_tail_graph_capture",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decoder_tail_graph",
+      "target": "mechanism.graph_dispatch",
+      "relation": "interacts_with"
+    },
+    {
+      "source": "mechanism.decoder_tail_graph",
+      "target": "mechanism.replay",
+      "relation": "interacts_with"
     }
   ]
 }

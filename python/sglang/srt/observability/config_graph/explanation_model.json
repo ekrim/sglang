@@ -146,6 +146,27 @@
       "runtime_evidence": [
         "native-r0 server.log at2026-10-22T17:28:33Z..17:28:35Z: layer14 rank2=30%, rank3=32%, ranks0/1=100%; immutable snapshot persistence still active."
       ]
+    },
+    {
+      "id": "lazy-tail-graph-warmup",
+      "graph_nodes": [
+        "mechanism.decoder_tail_graph",
+        "log.decoder_tail_graph_capture",
+        "metric.cuda_graph_passes_total"
+      ],
+      "observation": "Decoder tail graph capture receipts while whole-prefill cuda_graph mode is prefill_none, with early warmup service variation.",
+      "diagnosis": "Layer-tail graphs are enabled independently of whole-prefill graph dispatch and capture lazily. Cold capture overhead is part of this window.",
+      "alternatives": [
+        "Cold prefix misses require real prefill work. Client reconstruction, request arrival skew and host-table backing can also alter early rates."
+      ],
+      "check": "Read capture timestamps/cumulative seconds and client phase together with per-rank useful prefill counters. Whole-forward none does not imply all layers are eager.",
+      "action": "Let canonical warmup progress before ranking steady-state rates. If tail coverage remains a hypothesis, obtain bounded replay/fallback counters before changing MAX_ROWS; keep MIN_PREFILL_TOKENS semantics separate.",
+      "expected": "Cold capture receipts taper as shapes are covered; steady-state benefit requires paired evidence.",
+      "reject_if": "Capture continues for new shapes, or useful rates do not stabilize; no conclusion from gate counts alone.",
+      "status": "Observed in baseline-r1 canonical warmup; causal performance effect untested",
+      "runtime_evidence": [
+        "baseline-r1 server.log 2026-10-22 11:02:50\u201311:03:00 Pacific: TP0 capture receipts despite prefill backend disabled."
+      ]
     }
   ],
   "policy": {
