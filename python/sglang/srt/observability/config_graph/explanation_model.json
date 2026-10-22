@@ -294,13 +294,14 @@
         "Rank-local reporting restrictions.",
         "Actual low imbalance or low synchronization cost requires positive count coverage."
       ],
-      "check": "Inspect restricted process environment and source defaults; verify eligible producer paths, reporting ranks and histogram count deltas. Stage wall time includes waiting and overlap endpoints do not measure exposed GPU gaps.",
+      "check": "Inspect explicit launch controls and in-process resolved producer values where available; source defaults are context. A missing /proc/PID/environ entry does not prove unset: setproctitle can overwrite that memory while Python getenv retains the value. Verify eligible paths, reporting ranks and positive histogram count deltas. Stage wall time includes waiting; endpoint overlap labels do not measure exposed GPU gaps.",
       "action": "Reuse available per-rank workload/cache signals first. If synchronization or overlap attribution becomes decision-critical, enable the relevant existing producer in an explicitly identified instrumentation run and measure overhead before performance comparisons.",
       "expected": "Positive eligible count coverage and interpretable rank-local observations; unchanged serving work must be independently checked.",
       "reject_if": "Counts remain absent, coverage is inadequate, or instrumentation changes performance enough to confound the comparison.",
-      "status": "Source-audited and producer-disabled baseline verified; no runtime flag change",
+      "status": "Producer paths/defaults source-audited; procfs omissions do not independently verify runtime disablement. No instrumentation flag change.",
       "runtime_evidence": [
-        "baseline-hour-r3 process855831 has both metric producer env flags unset; pinned defaults are False. Recorded histogram counts are zero and stage overlap labels none. This does not establish zero synchronization or full exposed CPU time."
+        "baseline-hour-r3 restricted procfs snapshot omitted both producer flags; pinned defaults are False and launch config does not request them. Earlier wording that this verified disablement is withdrawn. Zero histogram counts and overlap none still cannot establish no synchronization or exposed CPU time.",
+        "R5b CPU-only spawned-process probe in the same image reproduced procfs omissions after setproctitle while Python getenv retained known values. See campaign evidence/proc-environment-title-probe.json. Live scheduler procfs omissions are therefore inconclusive; no server mutation was made."
       ]
     },
     {
