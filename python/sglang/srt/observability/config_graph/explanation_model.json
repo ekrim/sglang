@@ -217,6 +217,33 @@
         "GB200 baseline-r1: >524288-token TTFTp95 163111ms in300\u2013600s versus1197ms in600\u2013900s,86/103completed records; latency contrast is evidence of ambiguity, not proof of cache causality."
       ],
       "expected": "Optional cached-token field becomes available while logical token counts and workload rules stay unchanged."
+    },
+    {
+      "id": "cache-retention-versus-migration",
+      "graph_nodes": [
+        "mechanism.host_cache",
+        "config.hicache_ratio",
+        "config.hicache_write_policy",
+        "metric.evicted_tokens_total",
+        "metric.hicache_dropped_tokens_total",
+        "metric.hicache_backup_duration_seconds"
+      ],
+      "observation": "Host-cache occupancy grows beyond the first15minutes while device eviction/backups continue; device-without-backup drop counters remain zero in observed windows.",
+      "diagnosis": "Device eviction may be normal tier migration. Full/L2 working-set pressure is plausible later, but neither low activeKV usage nor zero device-drop counters proves spare retention capacity.",
+      "alternatives": [
+        "Context/branch mix and routing can change cache reuse without a capacity limit.",
+        "Host restore or blocking backup may matter even when data is retained.",
+        "Cache TP coordinates differ from scheduler TP coordinates under DPattention."
+      ],
+      "check": "Preserve DP/attentionTP/pool labels; compare available/evictable/used tokens, host occupancy, computed versus cached input, drop deltas and operation-duration deltas across the full replay. Do not add overlapping eviction/backup durations.",
+      "action": "Change host size/write policy only after the full-run evidence identifies retention or transfer cost and actual memory permits it. If host churn is ambiguous, add bounded requested/freed host-eviction summaries at evict_host and verify before a capacity intervention.",
+      "expected": "A true retention limitation should show late reuse/recompute changes or host eviction evidence; added host-eviction observation distinguishes ordinary L2 eviction from unbacked device drops.",
+      "reject_if": "Workload/routing changes explain the signal, transfers are not exposed, or no retention benefit remains after matching relevant regimes. Zero device-drop counts alone cannot reject ordinary L2 eviction.",
+      "status": "Existing telemetry/source semantics audited; full-hour baseline still running; no new executable instrumentation or cache config change.",
+      "runtime_evidence": [
+        "baseline-hour-r3 host occupancy~49\u201371% at16.5min, device eviction/backups continue, all observed hicache_dropped_tokens_total deltas0 through21min.",
+        "Cache metrics dp0\u20133/tp0 are attention-mesh labels; scheduler tp0\u20133 are global labels in this DEP4 run."
+      ]
     }
   ],
   "policy": {

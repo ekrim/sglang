@@ -1087,7 +1087,7 @@
         "anchor": "sglang:evicted_tokens_total"
       },
       "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+      "interpretation": "Device KV token slots freed, whether backed up to host or destroyed; not host-cache eviction count. Cache labels use attentionTP/DP under DPattention. Preserve logical versus physical-byte semantics."
     },
     {
       "id": "metric.load_back_tokens_total",
@@ -1113,12 +1113,13 @@
         "HiCache/storage enabled and relevant metric producer instantiated."
       ],
       "confounders": [
-        "Host Engram footprint; NUMA/huge pages; device victims; returning-turn locality; storage backend; write policy."
+        "Host Engram footprint; NUMA/huge pages; device victims; returning-turn locality; storage backend; write policy.",
+        "Active KV usage excludes evictable cache. Device eviction can preserve data in L2. L2 host eviction is distinct from device tokens dropped without backup. Cache TP labels use attention coordinates under DP attention."
       ],
       "hypothesis": "Larger host cache helps retention only if there is host memory and useful reuse; faster copy can help when loadback lies on the critical path.",
       "next_test": "Hold hit distribution constant for IO backend comparison; inspect pending gates and H2D time, not just end-of-run throughput.",
-      "remaining_gap": "No exact exposed-vs-overlapped H2D time; generic copy metrics can aggregate different transfers.",
-      "evidence": "code-audited; causal performance effect requires paired experiment"
+      "remaining_gap": "No exact exposed-vs-overlapped H2D time or per-request transfer attribution. UnifiedRadixCache.evict_host returns component-level freed tokens without a dedicated wrapper observation, so device-drop counters do not establish L2 host eviction volume.",
+      "evidence": "Code-audited; full GB200 baseline shows growing host occupancy and ongoing device eviction/backup beyond15minutes. All observed device-without-backup drop deltas remain0 through21minutes; later host-retention effects still under observation."
     },
     {
       "id": "config.enable_hierarchical_cache",
@@ -2992,6 +2993,50 @@
       },
       "availability": "Optional OpenAI usage field gated by enable_cache_report; final streaming usage requires the usual usage-request path.",
       "interpretation": "Already-accounted cached prompt tokens. Missing is unknown. Do not subtract them from logical benchmark TPS or interpret them as cache transfer duration."
+    },
+    {
+      "id": "metric.eviction_duration_seconds",
+      "kind": "metric",
+      "name": "sglang:eviction_duration_seconds",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:eviction_duration_seconds"
+      },
+      "availability": "Existing RadixCacheMetricsCollector, enabled with relevant cache/metrics producer.",
+      "interpretation": "Device eviction pass duration, including blocking device-to-host backup under write_back. It is not an exclusive wait component to add to backup duration. Cache rank labels use attention TP/DP coordinates under DP attention; scheduler TP labels can use a different mesh."
+    },
+    {
+      "id": "metric.hicache_backup_duration_seconds",
+      "kind": "metric",
+      "name": "sglang:hicache_backup_duration_seconds",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:hicache_backup_duration_seconds"
+      },
+      "availability": "Existing RadixCacheMetricsCollector, enabled with relevant cache/metrics producer.",
+      "interpretation": "Duration of merged device-to-local-host backup operations; not host-to-storage backup and not per-request exposed wait. Cache rank labels use attention TP/DP coordinates under DP attention; scheduler TP labels can use a different mesh."
+    },
+    {
+      "id": "metric.hicache_backup_tokens_total",
+      "kind": "metric",
+      "name": "sglang:hicache_backup_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:hicache_backup_tokens_total"
+      },
+      "availability": "Existing RadixCacheMetricsCollector, enabled with relevant cache/metrics producer.",
+      "interpretation": "Logical device-to-local-host tokens by pool. Do not sum duplicated attention-TP ranks. Bytes counters instead count physical shards. Cache rank labels use attention TP/DP coordinates under DP attention; scheduler TP labels can use a different mesh."
+    },
+    {
+      "id": "metric.hicache_dropped_tokens_total",
+      "kind": "metric",
+      "name": "sglang:hicache_dropped_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:hicache_dropped_tokens_total"
+      },
+      "availability": "Existing RadixCacheMetricsCollector, enabled with relevant cache/metrics producer.",
+      "interpretation": "Logical device KV destroyed without host backup, by fixed reason and pool. It does not count ordinary host/L2 eviction. Zero does not prove no host-cache churn. Cache rank labels use attention TP/DP coordinates under DP attention; scheduler TP labels can use a different mesh."
     }
   ],
   "edges": [
@@ -4366,6 +4411,26 @@
       "source": "mechanism.http_cache_accounting",
       "target": "metric.prefill_effective_tokens_total",
       "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.eviction_duration_seconds",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.hicache_backup_duration_seconds",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.hicache_backup_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.hicache_dropped_tokens_total",
+      "relation": "observed_by"
     }
   ]
 }
