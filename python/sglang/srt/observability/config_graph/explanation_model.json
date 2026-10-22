@@ -19,8 +19,13 @@
       "action": "Test interval24 ->12 at fixed topology, concurrency, token/request caps and cache warmup.",
       "expected": "Fewer consecutive deferrals and higher prefill service; decode ITL may worsen.",
       "reject_if": "Output throughput or p10 user speed regresses without a useful Pareto tradeoff; gate evidence does not clear.",
-      "status": "CPU behavior verified; GPU effect pending",
-      "runtime_evidence": []
+      "status": "GPU gate verified; one matched900-second diagnostic shows predicted latency/throughput tradeoff; full-hour characterization pending",
+      "runtime_evidence": [
+        "GB200 baseline-r1 interval24 versus cadence12-r2 interval12, bothC256, same pinned executable/model/image and canonical warmup; countdownmax23 versus11 verifies effective setting.",
+        "Short canonical result: totalTPS/GPU291430.60\u2192275773.54,output2271.77\u21922159.40;TTFTp50693.39\u2192519.14ms,p953163.66\u21921621.50ms;ITLp508.351\u219211.206ms. Zero recorded errors; draincancellations19\u219212.",
+        "Aligned busy windows show less queue persistence and fewer decode steps/second. Realized trajectories/cache progression differ; evidence supports a prefix tradeoff, not an exclusive causal attribution or full-replay winner.",
+        "Next run is original-config full3600-second baseline, per user steering. Learn later regimes before selecting another intervention; calibrate shorter sections against full runs later."
+      ]
     },
     {
       "id": "prefill-compute-budget",

@@ -2871,7 +2871,7 @@
       "hypothesis": "With queued or continuing prefill work, a long decode interval can reduce prefill service even with free KV and no token-budget encounter. Reducing it may increase logical throughput while worsening decode ITL.",
       "next_test": "At fixed concurrency, topology, cache warmup and budgets, compare interval24 versus a lower value only after sustained queued-work deferrals are observed. Compare prefill service, total/output throughput, TTFT and p10 decode speed; reverse the change if the workload tradeoff is unfavorable.",
       "remaining_gap": "No exposed wall-time or oldest eligible request age is attributed to this gate. Queue presence does not prove all queued requests are otherwise eligible.",
-      "evidence": "Source-audited during GB200 Phase3 baseline setup; production-method enabled/disabled CPU behavior tested. Runtime causal benefit unmeasured."
+      "evidence": "CPU behavior and four-rank GPU gate emissions verified. GB200 C256 paired900-second diagnostic24\u219212: lower TTFT/queues, slower decode and\u22125.37%totalTPS/GPU. These are preliminary prefix observations with closed-loop/cache confounders; a full-hour original-config baseline is next, before selecting another intervention."
     },
     {
       "id": "log.prefill.decode_interval",
