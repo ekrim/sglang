@@ -3088,7 +3088,7 @@
       "hypothesis": "Different resolved cache implementations may change CPU work; a missing required binding can fail initialization before traffic.",
       "next_test": "Record requested backend/buildmode, toolchain capability in the actual workspace, native binding availability and per-rank constructed TreeCore. Match the previous actual backend before a scheduler comparison; test another backend separately.",
       "remaining_gap": "Existing Init Unified Radix Cache log names the constructed class but does not give a complete requested/resolved selection receipt. Capture bounded startup fields instead of guessing from package version.",
-      "evidence": "Priorfullr3/r4 allranks PythonUnifiedTreeCore after unavailablecompiler fallback. R5 startup fails with compileravailable, buildmode never and missing overlaybinding. R5b explicitlypins Python; actualstartup verification pending."
+      "evidence": "Prior fullr3/r4 used Python UnifiedTreeCore on all ranks after unavailable-compiler fallback. R5 startup failed with compiler available, buildmode never and missing overlay binding. R5b explicitly pins Python; all4 construction receipts verify UnifiedTreeCore at22:16:04UTC. Performance outcome remains pending."
     },
     {
       "id": "log.unified_tree_core",
