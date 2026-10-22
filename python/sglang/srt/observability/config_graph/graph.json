@@ -3051,6 +3051,55 @@
         "anchor": "SGLANG_ENABLE_METRICS_DP_ATTENTION = EnvBool(False)"
       },
       "declared_default": "False"
+    },
+    {
+      "id": "config.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+      "name": "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND"
+      }
+    },
+    {
+      "id": "config.SGLANG_RUST_BUILD_MODE",
+      "name": "SGLANG_RUST_BUILD_MODE",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_RUST_BUILD_MODE"
+      }
+    },
+    {
+      "id": "mechanism.tree_core_selection",
+      "kind": "mechanism",
+      "title": "Resolved unified cache implementation",
+      "source": {
+        "path": "python/sglang/srt/mem_cache/unified_cache/tree_core_registry.py",
+        "anchor": "def _rust_fallback_reason"
+      },
+      "behavior": "Requested cache backend is resolved through platform/component/toolchain support. Python and Rust factories differ; Rust loader also depends on bundled bindings, cache and build mode. A compiler capability check can pass while the selected binding is unavailable under buildmode never.",
+      "conditions": [
+        "Unified radix cache construction; inherited container environment and source-overlay native artifacts matter."
+      ],
+      "confounders": [
+        "Identical tracked source and explicit launch flags do not establish identical compiler discovery, binary visibility, inherited environment or resolved backend."
+      ],
+      "hypothesis": "Different resolved cache implementations may change CPU work; a missing required binding can fail initialization before traffic.",
+      "next_test": "Record requested backend/buildmode, toolchain capability in the actual workspace, native binding availability and per-rank constructed TreeCore. Match the previous actual backend before a scheduler comparison; test another backend separately.",
+      "remaining_gap": "Existing Init Unified Radix Cache log names the constructed class but does not give a complete requested/resolved selection receipt. Capture bounded startup fields instead of guessing from package version.",
+      "evidence": "Priorfullr3/r4 allranks PythonUnifiedTreeCore after unavailablecompiler fallback. R5 startup fails with compileravailable, buildmode never and missing overlaybinding. R5b explicitlypins Python; actualstartup verification pending."
+    },
+    {
+      "id": "log.unified_tree_core",
+      "kind": "log_line",
+      "name": "Unified radix cache constructed TreeCore",
+      "source": {
+        "path": "python/sglang/srt/mem_cache/unified_radix_cache.py",
+        "anchor": "Tree Core: {type(self.tree_core).__name__}"
+      },
+      "availability": "Existing INFO during each cache construction after successful TreeCore initialization. Missing line after startup failure is not a backend receipt.",
+      "interpretation": "Actual constructed class by rank; compare with selected environment and preceding fallback/error logs. This is not a CPU-cost or speed measurement."
     }
   ],
   "edges": [
@@ -4469,6 +4518,21 @@
     {
       "source": "mechanism.measurement",
       "target": "metric.dp_attention_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+      "target": "mechanism.tree_core_selection",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_RUST_BUILD_MODE",
+      "target": "mechanism.tree_core_selection",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.tree_core_selection",
+      "target": "log.unified_tree_core",
       "relation": "observed_by"
     }
   ]

@@ -301,6 +301,29 @@
       "runtime_evidence": [
         "baseline-hour-r3 process855831 has both metric producer env flags unset; pinned defaults are False. Recorded histogram counts are zero and stage overlap labels none. This does not establish zero synchronization or full exposed CPU time."
       ]
+    },
+    {
+      "id": "resolved-cache-backend",
+      "graph_nodes": [
+        "config.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+        "config.SGLANG_RUST_BUILD_MODE",
+        "mechanism.tree_core_selection",
+        "log.unified_tree_core"
+      ],
+      "observation": "A fresh deployment fails to load a Rust TreeCore binding, or reports a different constructed TreeCore despite matched source/configuration.",
+      "diagnosis": "Backend resolution depends on toolchain availability, build mode and extension visibility beyond tracked Python source.",
+      "alternatives": [
+        "Unsupported cache components/platform can intentionally fall back to Python.",
+        "Different inherited environment, source-overlay native artifacts or compiler workspace can change selection."
+      ],
+      "check": "Compare prior per-rank Init Unified Radix Cache/Tree Core lines. Check compiler queries in the source-defined workspace, requested backend/buildmode, binding import spec and effective source path.",
+      "action": "For reproduction, explicitly select the backend the prior run actually constructed, then verify allrank construction receipts. A native-backend experiment is a separate intervention requiring compatibility/correctness validation.",
+      "expected": "Matched constructed class and successful initialization; no throughput gain is inferred from backend naming.",
+      "reject_if": "Resolved backend still differs, construction fails, or compatibility tests fail; never substitute an arbitrary binary just to bypass startup.",
+      "status": "R5 failed beforetraffic; explicitPython retryr5b launched, actualconstruction pending.",
+      "runtime_evidence": [
+        "Fullbaseline-hour-r3 andload384-hour-r4 logs showPythonUnifiedTreeCore onall4ranks after cargoqueryfailure. R5 sourcehashesmatch but compiler1.92.0 queries succeed, imagebuildmode never and overlaybinding absent; startupfails at22:10:18UTC. evidence/cadence18-hour-r5-runtime-backend.json preservescorrectworkspace query."
+      ]
     }
   ],
   "policy": {
