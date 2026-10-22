@@ -3,7 +3,7 @@
 Use this graph to connect a tuning hypothesis to an observable decision before spending GPU time on a full benchmark. It describes SGLang at base `f91b81b82ac7701b16fff92f9e2a24e840475b37` plus the instrumentation in this branch. It is a **prioritized causal audit**, not a claim that every serving option is covered or that a log uniquely identifies the best configuration.
 
 - `graph.json`: typed config, mechanism, metric and decision-log nodes, with source anchors, conditions, confounders, proposed experiments and remaining gaps.
-- `inventory.json`: all 537 declarative `A[...]` fields found in the checked-out argument definitions. 71 have causal mappings; the rest explicitly say `not_causally_audited`. CLI spellings here are candidates, not a replacement for the parser; aliases, `no_cli`, model defaults and launcher overrides matter. Environment variables and external launcher/router knobs are not exhaustively inventoried.
+- `inventory.json`: all 537 declarative `A[...]` fields found in the checked-out argument definitions. 72 have causal mappings; the rest explicitly say `not_causally_audited`. CLI spellings here are candidates, not a replacement for the parser; aliases, `no_cli`, model defaults and launcher overrides matter. Environment variables and external launcher/router knobs are not exhaustively inventoried.
 - `schema.json`: versioned JSON Schema for the graph.
 - `tools.py`: dependency-free source/edge/event-contract/inventory validator and config lookup. Run with Python 3.10+ from any directory.
 
@@ -130,3 +130,5 @@ Local validation covers recorder contracts and selected production branches usin
 See `explanation_model.json` for observation -> competing diagnoses -> discriminating checks -> config intervention rules. Evidence status is explicit; source-backed hypotheses are not measured throughput wins. The GB200 starting recipe uses an explicit prefill/decode interval, now mapped separately from the prefill delayer and token-budget gates.
 
 Existing textual startup receipts use `kind: log_line`; structured TuningRecorder events use `decision_log` and validate against EVENTS. Both require a checked producer source anchor. Host-table backing receipts are existing logs, not new runtime instrumentation. Graph-use metric modes separate prefill from decode; aggregate eager event counts still mix modes.
+
+Optional OpenAI cache accounting is modeled separately as a `response_field`, not a Prometheus series or TuningRecorder event. `--enable-cache-report` exposes existing cached-token metadata; missing usage detail does not mean zero reuse. Input-length strata alone cannot isolate prefill cost. Validate client coverage/accounting and reporting overhead before relying on this field, and preserve canonical logical-token scoring.

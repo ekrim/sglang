@@ -40,7 +40,8 @@
               "mechanism",
               "metric",
               "decision_log",
-              "log_line"
+              "log_line",
+              "response_field"
             ]
           },
           "source": {

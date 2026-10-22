@@ -2948,6 +2948,50 @@
       },
       "availability": "Existing INFO emitted by TP rank0 for each newly captured graph.",
       "interpretation": "Rows, segments, per-capture/cumulative wall seconds and device allocation delta. Does not count replay/fallback; does not establish every rank has identical memory cost."
+    },
+    {
+      "id": "config.enable_cache_report",
+      "name": "enable_cache_report",
+      "kind": "server_field",
+      "cli_candidate": "--enable-cache-report",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/serving.py",
+        "anchor": "enable_cache_report:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "mechanism.http_cache_accounting",
+      "kind": "mechanism",
+      "title": "Expose existing per-request cached-token accounting",
+      "source": {
+        "path": "python/sglang/srt/entrypoints/openai/usage_processor.py",
+        "anchor": "def calculate_streaming_usage"
+      },
+      "behavior": "OpenAI usage construction optionally attaches cached_tokens from existing tokenizer metadata. It preserves prompt_tokens, completion_tokens and their logical sum; enabling this report does not enable prefix caching.",
+      "conditions": [
+        "OpenAI completion/chat usage response and enable_cache_report=True; client must retain the usage field."
+      ],
+      "confounders": [
+        "Long input can be mostly cached. Tier totals in server metrics do not identify each request. Reporting fields may be absent because reporting is disabled, rather than no reuse.",
+        "Partial/live completion records omit unfinished long requests. Cache state and closed-loop trajectory progress differ across configurations."
+      ],
+      "hypothesis": "Per-request cache reporting can discriminate expensive uncached prefill from long but mostly reused prompts when aggregate TTFT changes.",
+      "next_test": "Enable only reporting on a fresh instrumentation trial. Verify cached_tokens arrives, prompt/completion/total accounting and canonical scoring remain unchanged, then stratify TTFT by input and uncached tokens plus elapsed workload phase.",
+      "remaining_gap": "This field is a count, not per-request cache-transfer duration, cache tier timing or exposed cadence wait. Overhead neutrality and client coverage need runtime verification.",
+      "evidence": "source-audited after GB200 baseline length strata exposed strong phase-dependent latency; runtime reporting not yet enabled"
+    },
+    {
+      "id": "response.prompt_cached_tokens",
+      "kind": "response_field",
+      "name": "usage.prompt_tokens_details.cached_tokens",
+      "source": {
+        "path": "python/sglang/srt/entrypoints/openai/usage_processor.py",
+        "anchor": "cached_tokens=sum("
+      },
+      "availability": "Optional OpenAI usage field gated by enable_cache_report; final streaming usage requires the usual usage-request path.",
+      "interpretation": "Already-accounted cached prompt tokens. Missing is unknown. Do not subtract them from logical benchmark TPS or interpret them as cache transfer duration."
     }
   ],
   "edges": [
@@ -4307,6 +4351,21 @@
       "source": "mechanism.decoder_tail_graph",
       "target": "mechanism.replay",
       "relation": "interacts_with"
+    },
+    {
+      "source": "config.enable_cache_report",
+      "target": "mechanism.http_cache_accounting",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.http_cache_accounting",
+      "target": "response.prompt_cached_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.http_cache_accounting",
+      "target": "metric.prefill_effective_tokens_total",
+      "relation": "indirectly_observed_by"
     }
   ]
 }
