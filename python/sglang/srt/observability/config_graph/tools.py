@@ -129,7 +129,23 @@ def check(graph):
         if node["kind"] == "decision_log":
             assert node["name"] in module.EVENTS
             assert node["numeric_fields"] == sorted(module.EVENTS[node["name"]])
+    companion = json.loads((HERE / "explanation_model.json").read_text())
+    assert companion["schema_version"] == 1
+    rule_ids = set()
+    for rule in companion["rules"]:
+        assert rule["id"] not in rule_ids, rule["id"]
+        rule_ids.add(rule["id"])
+        for key in (
+            "observation", "diagnosis", "alternatives", "check", "action",
+            "expected", "reject_if", "status",
+        ):
+            assert rule.get(key), (rule["id"], key)
+        assert rule["graph_nodes"] and all(
+            n in nodes for n in rule["graph_nodes"]
+        ), rule["id"]
+        assert isinstance(rule["runtime_evidence"], list), rule["id"]
     return dict(
+        explanation_rules=len(rule_ids),
         nodes=len(nodes),
         edges=len(graph["edges"]),
         inventoried_fields=len(current["fields"]),

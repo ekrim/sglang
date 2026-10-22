@@ -211,19 +211,19 @@
       ],
       "check": "Use finalized elapsed-time/length strata, server tier counters and phase accounting. Enable per-request cache reporting in a separately recorded instrumentation trial when aggregate evidence cannot discriminate.",
       "action": "Do not tune chunk size or cadence solely from aggregate TTFT. Obtain cache reporting without changing canonical scoring, then compare input minus cached tokens alongside queue/gate evidence.",
-      "prediction": "Optional cached-token field becomes available while logical token counts and workload rules stay unchanged.",
       "reject_if": "Reporting remains absent, changes token accounting, adds unacceptable overhead, or cache-conditioned evidence does not support the proposed mechanism.",
       "status": "Source-audited reporting path; not enabled or GPU-validated in baseline-r1/cadence12-r2",
       "runtime_evidence": [
         "GB200 baseline-r1: >524288-token TTFTp95 163111ms in300\u2013600s versus1197ms in600\u2013900s,86/103completed records; latency contrast is evidence of ambiguity, not proof of cache causality."
-      ]
+      ],
+      "expected": "Optional cached-token field becomes available while logical token counts and workload rules stay unchanged."
     }
   ],
   "policy": {
     "units": "Keep rank/process labels; encounter counts are not unique requests, wait seconds or fallback percentages.",
-    "window": "Require repeated consistent live windows and workload-phase context; cold/warmup observations cannot certify Pareto throughput.",
-    "early_stop": "Safety/invalidity stops immediately; clear sustained diagnostic evidence can stop a screen, whose partial throughput stays exploratory.",
-    "promotion": "Paired equal-duration screens with full corpus/canonical warmup, then full-duration validity, latency and refreshed frontier checks.",
+    "window": "First characterize the full canonical AgentX hour. Read changing workload/cache regimes with graph evidence throughout; consistent early windows do not establish the whole replay.",
+    "early_stop": "Full baseline/candidate runs continue through the requested measurement unless safety or invalidity requires stopping. Shorter diagnostic sections need an explicit, previously calibrated question.",
+    "promotion": "Use complete canonical runs, validity/accounting and refreshed latency/throughput frontiers for candidate ranking. Calibrate shorter sections against full-run outcomes later; retain missed regimes and counterexamples.",
     "unknown": "Missing producers/events are unknown, not zero; add discriminating instrumentation when alternatives remain."
   }
 }
