@@ -2596,7 +2596,8 @@
         "Identify the deployed router implementation first."
       ],
       "confounders": [
-        "Session affinity, stale cache records, P/D role-specific worker pools, request distribution."
+        "Session affinity, stale cache records, P/D role-specific worker pools, request distribution.",
+        "External AgentX concurrency changes trajectory mix and canonical warmup work; fresh deployments can enter profiling with different retained-cache state. Separate this end-to-end load-point effect from isolated router or batch-scaling causality."
       ],
       "hypothesis": "Locality can reduce prefill work, while overconcentration can increase queue time.",
       "next_test": "Compare per-worker arrival/queue slopes and tier hit rates on the same trace; use gateway/Dynamo routing metrics.",

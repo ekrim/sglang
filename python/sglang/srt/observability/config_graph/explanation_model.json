@@ -124,7 +124,8 @@
         "Queue depletion can be caused by a slow upstream stage.",
         "Router prefix approximation differs from server radix-cache state.",
         "Prefill compute budget, CPU/synchronization critical path or graph coverage may limit scaling.",
-        "Additional lanes enlarge the cache working set and change closed-loop replay progress."
+        "Additional lanes enlarge the cache working set and change closed-loop replay progress.",
+        "Changing trajectory concurrency changes canonical warmup volume and retained cache at profiling start. Preserve the preset; compare full workload/cache histories before attributing a gain to batching alone."
       ],
       "check": "Inspect the deployed router implementation, routing headers, client offered load, HTTP activity, per-rank arrivals and tier hit rates.",
       "action": "After complete baseline review, test canonical client concurrency256\u2192384 with the server recipe fixed and a fresh deployment. Inspect whether useful batch work grows or another server gate replaces the apparent load limit. Keep routing/frontend settings fixed unless separate evidence supports changing them.",
@@ -135,7 +136,8 @@
         "baseline-hour-r3 quartermean running19.84/22.24/23.17/24.36 and queue3.26/1.58/1.44/1.85 perrank; observed maxrunning40 versus96cap.",
         "Late client10s sample0.439CPUcore with8allowed; transienteventloop warnings and disabledDP/devicetiming remain caveats.",
         "Fullbaseline351476.99215totalTPS/GPU,2461.78012outputTPS/GPU;35868successes,18draincancellations,0errors,fullcoverage/OSLagreement.",
-        "load384-hour-r4 changes onlyclientCONC; same4GB200/source4e6/model/image/serverrecipe, full3600s aftercanonicalwarmup. Outcome pending."
+        "load384-hour-r4 changes onlyclientCONC; same4GB200/source4e6/model/image/serverrecipe, full3600s aftercanonicalwarmup. Outcome pending.",
+        "C384 canonical warmup: 409 mandatory primers plus 3840 additional requests, 703.84s; C256: 285 plus 2560, 443.12s. First 90s host-anchor endpoints are about42\u201354% versus4\u201314%. Fresh deployment is not identical post-warmup state. Full C384 outcome remains pending."
       ],
       "external_controls": [
         {
@@ -201,7 +203,8 @@
       "observation": "Three early profiling windows have small batches and near-empty queues; later canonical idle-cap advances coincide with more long requests and larger queues.",
       "diagnosis": "Offered work changes within the profiling phase. Early consistent windows can still represent only a light-load regime.",
       "alternatives": [
-        "Client CPU/transport saturation; routing skew; server admission limits. Check client CPU and per-rank arrivals/gates rather than assuming one."
+        "Client CPU/transport saturation; routing skew; server admission limits. Check client CPU and per-rank arrivals/gates rather than assuming one.",
+        "Changing trajectory concurrency changes canonical warmup volume and retained cache at profiling start. Preserve the preset; compare full workload/cache histories before attributing a gain to batching alone."
       ],
       "check": "Align benchmark phase and idle-cap events with request-length distributions, active batches, queues, cache rates and admission events.",
       "action": "Characterize complete replay and retained-state transitions first. Select an intervention after full evidence; later calibrate shorter sections against full outcomes while keeping canonical workload rules unchanged.",
@@ -211,7 +214,8 @@
       "runtime_evidence": [
         "baseline-r1-profile-w1/w2/w3 versus client idle-cap events after 2026-10-22T18:15Z; baseline-r1-client-cpu.json shows 0.50 CPU core used with 8 allowed.",
         "Fullbaseline quartermeanISL117870/140683/153895/153133tokens; logicalhostanchors reachcapacity around33\u201334.5minutes, outside earlier15minute prefixes.",
-        "Identical-config first15minute decode-counterservice2368.15 versus2395.20tokens/s/GPU (~1.14% difference). This is diagnostic repeatability, not a scoredprefix or proof short runs rank full outcomes."
+        "Identical-config first15minute decode-counterservice2368.15 versus2395.20tokens/s/GPU (~1.14% difference). This is diagnostic repeatability, not a scoredprefix or proof short runs rank full outcomes.",
+        "C384 canonical warmup: 409 mandatory primers plus 3840 additional requests, 703.84s; C256: 285 plus 2560, 443.12s. First 90s host-anchor endpoints are about42\u201354% versus4\u201314%. Fresh deployment is not identical post-warmup state. Full C384 outcome remains pending."
       ]
     },
     {
