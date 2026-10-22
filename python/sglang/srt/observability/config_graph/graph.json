@@ -2507,7 +2507,8 @@
         "Check enablement and rank labels before interpreting a zero or missing series."
       ],
       "confounders": [
-        "Decode log interval; idle/long forwards; completion-biased request histograms; sampling window; duplicate TP counts; warmup."
+        "Decode log interval; idle/long forwards; completion-biased request histograms; sampling window; duplicate TP counts; warmup.",
+        "External benchmark finalization and artifact retention: completed traffic, zero request errors and healthy serving do not imply complete metric-domain exports or a qualified result. A campaign resource guard can terminate postprocessing independently of SGLang OOM."
       ],
       "hypothesis": "Full canonical replay establishes workload and cache regimes; later calibrated live sections may reject hypotheses earlier, but cannot replace qualified full-run scoring.",
       "next_test": "Collect 10-second decision windows and 5-second scrapes; align steady-state windows, test telemetry overhead on/off, and preserve original benchmark validation.",
