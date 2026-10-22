@@ -16,7 +16,7 @@
         "Another DP rank can arm the interval; local queue pressure may differ."
       ],
       "check": "Correlate rank-local gate windows with queue slope, prefill effective-token rates, decode output rate and resolved cadence. Event counts do not measure wait time.",
-      "action": "Choose one cadence adjustment from workload-specific evidence. The next prospective GB200 trial is interval24\u219218 at C384, with other server flags fixed and a full3600-second replay.",
+      "action": "Choose one cadence adjustment from workload-specific evidence. The C384 interval 24 to 18 full replay is now completed; retain its observed tradeoff and confounders. Select any future cadence trial prospectively and keep other serving controls fixed.",
       "expected": "Fewer consecutive deferrals and higher prefill service; decode ITL may worsen.",
       "reject_if": "Output throughput or p10 user speed regresses without a useful Pareto tradeoff; gate evidence does not clear.",
       "status": "Full C384 interval18 replay qualified; predicted scheduling tradeoff observed across all four quarters; isolated full-score effect unknown because C384 interval24 lost finalization",
