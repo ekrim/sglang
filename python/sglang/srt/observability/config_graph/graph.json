@@ -1120,7 +1120,7 @@
       "hypothesis": "Larger host cache helps retention only if there is host memory and useful reuse; faster copy can help when loadback lies on the critical path.",
       "next_test": "Hold hit distribution constant for IO backend comparison; inspect pending gates and H2D time, not just end-of-run throughput.",
       "remaining_gap": "No exact exposed-vs-overlapped H2D time or per-request transfer attribution. UnifiedRadixCache.evict_host returns component-level freed tokens without a dedicated wrapper observation, so device-drop counters do not establish L2 host eviction volume. Existing generic host occupancy lacks per-component pool/byte coverage; source-selected anchor saturation cannot measure every physical pool.",
-      "evidence": "Code-audited; full GB200 baseline shows growing host occupancy and ongoing device eviction/backup beyond15minutes. All observed device-without-backup drop deltas remain0 through21minutes; later host-retention effects still under observation."
+      "evidence": "Full GB200 baseline shows logicalhostanchor growth beyond15min and capacity around33\u201334.5min. All40windows retain zero device-without-backup drop deltas; this is not ordinaryhost-eviction volume. No sharp persistent queue/computedprefill deterioration immediately follows anchorcapacity."
     },
     {
       "id": "config.enable_hierarchical_cache",
@@ -2512,7 +2512,7 @@
       "hypothesis": "Full canonical replay establishes workload and cache regimes; later calibrated live sections may reject hypotheses earlier, but cannot replace qualified full-run scoring.",
       "next_test": "Collect 10-second decision windows and 5-second scrapes; align steady-state windows, test telemetry overhead on/off, and preserve original benchmark validation.",
       "remaining_gap": "Decision logs are event-driven and synchronous on flush; no independent heartbeat, no proof an absent event means the system is healthy.",
-      "evidence": "code-audited; causal performance effect requires paired experiment"
+      "evidence": "Full GB200 baseline characterized all3600s pluscanonicalwarmup/drain. Early workloadburst and laterlogicalhost-retention capacity demonstrate different regimes; prefix repeatability does not validate full-run ranking shortcuts."
     },
     {
       "id": "config.enable_metrics",
