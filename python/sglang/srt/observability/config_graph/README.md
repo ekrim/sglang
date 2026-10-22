@@ -1,0 +1,125 @@
+# Configuration observability graph
+
+Use this graph to connect a tuning hypothesis to an observable decision before spending GPU time on a full benchmark. It describes SGLang at base `f91b81b82ac7701b16fff92f9e2a24e840475b37` plus the instrumentation in this branch. It is a **prioritized causal audit**, not a claim that every serving option is covered or that a log uniquely identifies the best configuration.
+
+- `graph.json`: typed config, mechanism, metric and decision-log nodes, with source anchors, conditions, confounders, proposed experiments and remaining gaps.
+- `inventory.json`: all 537 declarative `A[...]` fields found in the checked-out argument definitions. 71 have causal mappings; the rest explicitly say `not_causally_audited`. CLI spellings here are candidates, not a replacement for the parser; aliases, `no_cli`, model defaults and launcher overrides matter. Environment variables and external launcher/router knobs are not exhaustively inventoried.
+- `schema.json`: versioned JSON Schema for the graph.
+- `tools.py`: dependency-free source/edge/event-contract/inventory validator and config lookup. Run with Python 3.10+ from any directory.
+
+```bash
+python python/sglang/srt/observability/config_graph/tools.py --check
+python python/sglang/srt/observability/config_graph/tools.py --config chunked-prefill-size
+python python/sglang/srt/observability/config_graph/tools.py --config num-reserved-decode-tokens
+```
+
+Lookup includes interacting mechanisms and other controls on the same mechanism. An unknown lookup is **unreviewed**, not proof the option has no performance effect. Source anchors are drift checks, not proof a relationship is semantically unchanged after a rebase.
+
+## Read the graph in this order
+
+```mermaid
+flowchart LR
+    C[Requested config] --> R[Resolved per-rank limits]
+    R --> M[Admission / cache / dispatch mechanism]
+    M --> O[Decision observations and existing metrics]
+    W[Workload and other config] --> M
+    O --> H[Testable bottleneck hypothesis]
+    H --> T[One controlled change]
+    T --> V[Correctness and performance verification]
+```
+
+An option controls a mechanism, but multiple options and workload features can affect the same mechanism. Edges mean `controls_or_constrains`, `observed_by`, `indirectly_observed_by` or `interacts_with`. Mechanism `behavior` is a code finding; `hypothesis` predicts an outcome that still needs an experiment. `remaining_gap` says what the available observations cannot establish.
+
+For example, `decode.kv_budget` proves that a preallocation capacity check failed. It does **not** prove increasing memory fraction is the right fix: graph buffers, active-decode reservations, locked prefixes, shared-pool geometry or another role's arrival pattern may be involved.
+
+## Enable live observations
+
+Add to the existing, validated server command on both P and D:
+
+```text
+--enable-metrics
+--enable-metrics-for-all-schedulers
+--tuning-observation-interval 10
+```
+
+The new interval defaults to **0 (disabled)**. It produces INFO logs independently of Prometheus enablement. Use INFO logging to retain them. Prometheus collection remains in the existing metrics system; the new decision counters are structured logs, not additional Prometheus series.
+
+Optionally enable the existing device timer with `SGLANG_ENABLE_METRICS_DEVICE_TIMER=1` for forward timing and sampled scheduler/forward overlap. Measure timer overhead separately from the new instrumentation. `--enable-forward-pass-metrics` exposes the existing IPC feed to an external consumer; it is not automatically a Prometheus scrape.
+
+Three new record prefixes:
+
+| Record | Meaning |
+| --- | --- |
+| `tuning_scheduler_config` | Scheduler-resolved chunk, prefill, running-request, token-pool and page limits after initialization. |
+| `tuning_runtime` | Constructed attention backend and graph-runner classes observed at first dispatch (and when class selection changes), separately for target and draft. This is a construction receipt, not a kernel profile. |
+| `tuning_observation` | Aggregated decision/check counts and CPU numeric summaries for a process-local window. Includes host, PID, TP/PP/DP rank identity, role, Unix emission time and monotonic window boundaries. |
+
+`values` contain `count`, `sum`, `min`, `max`, `last` per numeric field. `sum/count` gives an observation-weighted mean, **not a time-weighted utilization**. Windows flush on the next observed event after the interval. They are not a heartbeat; idle or stuck processes may emit nothing. Normal interpreter exit attempts a final flush, but termination or multiprocessing exit can lose the last partial window. Keep process health and existing queue metrics alongside the logs.
+
+No request IDs, prompts, token sequences, addresses or tensor values are logged. The recorder has a fixed event/field vocabulary. Hooks use CPU metadata and add no CUDA synchronization, collective or GPU readback. State has one writer: the normal scheduler/forward-submission thread. Concurrent forward threads/PDMux and other specialized serving paths require separate validation before use. Logging itself may block on its sink at flush time; a longer interval reduces frequency, not that possibility.
+
+## Interpret each observation correctly
+
+| Family | Unit / population | Meaning and limits |
+| --- | --- | --- |
+| `prefill.request_slots`, `request_limit` | Gate encounters | Physical/logical request admission versus explicit per-prefill count cap. Same queued request may encounter the gate many times. A preemption attempt can still follow a slot observation. |
+| `prefill.input_budget`, `chunk_budget`, `replay_budget` | Budget-check encounters | Compute budget exhausted. Replay consumes chunk space; this is independent of free KV tokens. Budget checks also run after admitting a request, so these are not necessarily rejected candidates. |
+| `prefill.full_capacity`, `swa_capacity`, `shared_capacity` | Allocator checks | Requested reservation did not fit that budget model. `memory_budget` is a higher-level wrapper observation and can accompany one of these: **do not sum them as separate failures**. Shared-pool failure cannot be assigned to one physical pool from scalar token counts alone. |
+| `prefill.swa_chunk_cap` | Chunk reductions | Memory constraints reduced a chunk; admission may still succeed. |
+| `prefill.admitted` | Budget charges, including continuing chunks | Actual extend rows, replay rows and output reservation charged by `_update_prefill_budget`. Not unique requests, completed forwards, or physically allocated output tokens. |
+| `prefill.prefetch_pending`, `staging_pending` | Candidate scans | Cache movement prevented selecting that candidate on this pass. Not transfer time. |
+| `decode.handshake_pending` | Request polls | Common bootstrapping state, which can include discovery and deferred readiness; it does not isolate prefill-complete wait. |
+| `decode.*_slots`, `mamba_capacity`, `hisparse_capacity`, `host_capacity` | Admission gate encounters | That gate stopped this scan. Earlier gates hide later constraints. |
+| `decode.kv_budget` | Failed device preallocation checks | CPU FULL/SWA required versus budget values. Shared physical feasibility can still fail when individual token budgets appear sufficient. |
+| `decode.preallocated` | Successful device allocations | Destination space allocated, before metadata publication. Not proof the transfer started or finished. Direct host allocations/resumed requests are outside this event. |
+| `graph.prefill.*` | Eligibility-check failures | First failing predicate in that check. Schedule-time voting and forward-time checks can both occur, and `local_ineligible` can accompany a more specific reason. These counts are **not fallback percentages**. |
+| `forward.target.*`, `forward.draft.*` | ModelRunner dispatches | Successful return from the selected execution path (GPU work may still be asynchronous). Eager includes idle/mixed/other modes; decode runner may handle speculative verify. Not a count of completed GPU kernels, and not proof every layer was graphed. |
+
+The graph nodes include every event in `tuning.py`. Existing `cuda_graph_passes_total` is still the preferred graph-use counter; inspect its labels/producer when comparing with the new broader dispatch counts. Local context-limit failures currently combine a missing context bound with an exceeded bound; inspect the workload/runner configuration before increasing coverage.
+
+## Existing telemetry to reuse
+
+Read metric definitions in `metrics_collector.py` and their producers in `scheduler_components/metrics_reporter.py`. A defined metric with a zero value can mean its producer is inactive. Cache, EPLB and storage collectors have their own gates. Decode statistics often update at `--decode-log-interval`; prefill has different reporting cadence. Request latency histograms and transfer histograms generally describe completed stages, so they can miss a currently stuck request.
+
+Useful live series (preserve instance/rank labels rather than blindly summing replicated TP work):
+
+- Supply/queues: `num_queue_reqs`, P bootstrap/inflight counts, D prealloc/transfer counts, HTTP active requests.
+- Capacity: FULL/SWA/Mamba available, evictable and used tokens, actual maximum capacities, weight/KV/graph memory.
+- Work: rates of `prefill_effective_tokens_total` by input/device-hit/host-hit/storage-hit mode; accepted speculative length; rates of `realtime_tokens_total`.
+- Time: rates of `scheduler_stage_seconds_total`, `scheduler_process_cpu_seconds_total`, `forward_execution_seconds_total`; transfer and loadback latency histograms.
+- Cooperation: DP token imbalance and sync wait; EPLB balance statistics when enabled.
+
+Scheduler process CPU can exceed one CPU-second per wall-second because it includes threads. Sampled `forward_overlap=full/partial/none` is not exact exposed time; `none` can also mean timing unavailable. Logical token throughput includes reuse and must not be confused with output-token throughput or GPU FLOPs.
+
+## First diagnosis examples
+
+| Observed together | Hypothesis to test | Next controlled change / disproof |
+| --- | --- | --- |
+| Queued P work, input/chunk budget encounters, free KV, request caps not binding | Prefill compute budget is limiting batch formation | Raise only the effective per-rank budget; check workspace/replay limits and whether P service rate rises without worsening tails. |
+| D prealloc grows; `decode.request_slots` frequent; KV still free | Incoming request rows limit transfer admission | Test extra slots at fixed KV capacity. If KV gates immediately replace row gates, more slots will not sustain a gain. |
+| D prealloc grows; `decode.kv_budget`; high pending reservation usage | Destination memory held before requests can decode | Compare early vs deferred readiness with identical workload/caps. Low-pressure latency can worsen even if high-pressure throughput improves. |
+| Good cache hits, many admitted replay rows, long CPU stages | Cached work still incurs replay/submission overhead | Separate replay-tail and full-prefill graph paths; inspect actual dispatch before interpreting an enabled flag. |
+| Mostly eager forwards plus context-coverage failures | Graph captures do not cover observed context | Increase coverage in a controlled trial and account for lost KV capacity. DP-vote failures instead require examining peer-rank eligibility. |
+| Idle GPU capacity, few scheduler arrivals, busy frontend | Request processing starves serving | Measure offered→HTTP→scheduler arrival; then test frontend changes. Increasing GPU batch caps cannot fix missing arrivals. |
+
+## Outstanding instrumentation design
+
+These are explicit gaps, not completed features:
+
+1. **External MoE variant provenance:** record the library-resolved kernel variant per capture/replay key and a bounded workload-shape summary. Inspect FlashInfer/DeepGEMM APIs first. SGLang wrapper choice or a Python kernel-call counter cannot prove Generic versus GenPhase during CUDA graph replay. Use actual kernel profiles until this exists.
+2. **PD stage age / exposed waits:** add per-stage oldest age and transition residence histograms using existing lifecycle timestamps, covering cancel, retry, recompute and host receive. Separate discovery, readiness, capacity, wire completion and delayed polling. Do not add a per-request metric label or scan all queues every hot-loop iteration.
+3. **CPU/cache overlap:** attach existing completion events to transfers and bounded replay-tail submissions; accumulate CPU/device/exposed time without synchronization. First validate existing timer event ownership and overlap semantics.
+4. **Host capacity and placement receipt:** record actual affinity, huge-page backing and per-worker Engram/cache budgets at initialization. Host DRAM is shared beyond one scheduler; do not sum duplicated/shared allocations as independent bytes.
+5. **Router and kernel imbalance:** connect the deployed router's decision telemetry and a bounded per-layer worst-rank MoE/rebalance summary. These belong to their respective owners; a generic scheduler queue length cannot substitute.
+
+## Phase 3 validation and scarce-GPU workflow
+
+Local validation covers recorder contracts and selected production branches using fake resources; it **does not establish CUDA graph safety, server startup, native correctness or serving overhead**.
+
+1. Pin source/image/library/model/config revisions. Save requested command plus resolved startup records. Hold P:D ratio, concurrency, acceptance methodology, clocks/fabric and cache warmup fixed. Use existing validated recipes, not a newly invented baseline.
+2. On any suitable GPU first, run a small AGG and P/D smoke with instrumentation off/on. Include TP and attention-DP, real cancellation/retraction, low slot/capacity limits, graph-eligible and ineligible inputs. Verify unchanged native outputs/accuracy and no new collectives/synchronization in a profile.
+3. Provoke one known limit at a time: a tiny prefill token budget, a request-row cap, a FULL/SWA cap and an out-of-coverage graph context. Confirm the intended signal fires and clears when the limit changes. Check both roles/ranks and that records remain bounded.
+4. Measure disabled and enabled overhead with a stable repeated workload and the same existing metric/timer flags. Suggested acceptance: no repeatable >1% throughput or step-time regression at a 10-second log interval; if noise exceeds that, gather repeats rather than declaring success. Count log bytes and check sink stalls.
+5. Spend Rubin time only after those checks. Use a short representative steady window to reject hypotheses and select one configuration change. Cache warmup and long returning contexts must be representative; a cold one-minute run cannot rank AgentX Pareto points.
+6. Use paired A/B windows, then full-duration qualified runs for surviving candidates. Check correctness, output throughput, logical throughput, interactivity and TTFT/ITL. Never promote an unqualified microbenchmark or synthetic-acceptance shortcut to a serving gain.
+7. If observations cannot distinguish alternatives, record the missing causal edge and add/validate a signal before starting another wide sweep. Preserve negative results and unresolved cases.

@@ -68,6 +68,11 @@ class Observability(msgspec.Struct):
     ] = None
     show_time_cost: A[bool, "Show time cost of custom marks."] = False
     enable_metrics: A[bool, "Enable log prometheus metrics."] = False
+    tuning_observation_interval: A[
+        float,
+        "Emit aggregated CPU admission/dispatch decision logs at this interval in seconds. "
+        "0 disables (default). Event-driven, per scheduler rank; not GPU timings or request counts.",
+    ] = 0.0
     smg_http_sidecar_port: A[
         Optional[int],
         Arg(

@@ -22,6 +22,7 @@ realizes the selected reservation before a host transfer pins device rows.
 from typing import Optional
 
 from sglang.srt.mem_cache.allocator.swa import is_swa_req_ring
+from sglang.srt.observability.tuning import recorder as tuning_recorder
 
 
 def estimate_swa_kv_tokens(
@@ -123,11 +124,14 @@ class PrefillBudget:
         auxiliary_swa_host_hit_length: int = 0,
     ) -> tuple[bool, int | None]:
         """Return admission feasibility and a memory bound on the requested chunk."""
-        return (
-            (True, chunk_limit)
-            if total_tokens < self.remaining_total
-            else (False, None)
-        )
+        remaining = self.remaining_total
+        if total_tokens < remaining:
+            return True, chunk_limit
+        if tuning_recorder.enabled:
+            tuning_recorder.observe(
+                "prefill.full_capacity", required=total_tokens, remaining=remaining
+            )
+        return False, None
 
     def can_allocate_prefill(
         self,
@@ -238,7 +242,12 @@ class SWAPrefillBudget(PrefillBudget):
         chunk_limit: int | None,
         auxiliary_swa_host_hit_length: int = 0,
     ) -> tuple[bool, int | None]:
-        if total_tokens >= self.remaining_total:
+        remaining = self.remaining_total
+        if total_tokens >= remaining:
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "prefill.full_capacity", required=total_tokens, remaining=remaining
+                )
             return False, None
         extend_input_len = self.ceil_paged_tokens(extend_input_len)
         needed = self.swa_tokens(
@@ -265,7 +274,19 @@ class SWAPrefillBudget(PrefillBudget):
         ):
             cap = self._chunk_cap(max_new_tokens, swa_host_hit_length)
         if chunk_limit is None or cap <= 0:
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "prefill.swa_capacity",
+                    required=needed,
+                    remaining=self.remaining_swa,
+                )
             return False, None
+        if tuning_recorder.enabled:
+            tuning_recorder.observe(
+                "prefill.swa_chunk_cap",
+                original=chunk_limit,
+                reduced=min(chunk_limit, cap),
+            )
         return True, min(chunk_limit, cap)
 
     def has_capacity(self) -> bool:
@@ -415,13 +436,33 @@ class SharedSWAPrefillBudget(SWAPrefillBudget):
             self.swa_tokens(input_tokens, max_new_tokens, chunk_limit=chunk_limit),
             empty_pool=True,
         ):
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "prefill.shared_capacity",
+                    full_required=total_tokens,
+                    swa_required=needed,
+                )
             return False, None
         cap = self._joint_chunk_cap(
             max_chunk_tokens=min(chunk_limit, max(0, extend_input_len - 1)),
             chunk_limit=chunk_limit,
             swa_host_hit_length=swa_host_hit_length,
         )
-        return (True, min(chunk_limit, cap)) if cap > 0 else (False, None)
+        if cap > 0:
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "prefill.swa_chunk_cap",
+                    original=chunk_limit,
+                    reduced=min(chunk_limit, cap),
+                )
+            return True, min(chunk_limit, cap)
+        if tuning_recorder.enabled:
+            tuning_recorder.observe(
+                "prefill.shared_capacity",
+                full_required=total_tokens,
+                swa_required=needed,
+            )
+        return False, None
 
     def has_capacity(self) -> bool:
         return self._fits(0, 0)

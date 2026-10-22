@@ -28,6 +28,7 @@ from functools import partial
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Set, Tuple, Union
 
+from sglang.srt.observability.tuning import recorder as tuning_recorder
 from sglang.srt.runtime_context import (
     SpawnRanks,
     attention_backends,
@@ -4059,6 +4060,7 @@ class Scheduler(
             and not self.enable_priority_preemption
         ):
             running_batch.batch_is_full = True
+            tuning_recorder.observe("prefill.request_slots")
             return None, running_batch
 
         # Get priority queue
@@ -4165,6 +4167,7 @@ class Scheduler(
                 running_batch=running_batch,
                 num_held_rows=num_held_rows,
             ):
+                tuning_recorder.observe("prefill.request_slots")
                 running_batch.batch_is_full = True
 
             if running_batch.batch_is_full:
@@ -4180,6 +4183,7 @@ class Scheduler(
                 req.time_stats.observe_storage_prefetch_ready(prefetch_done)
                 if not prefetch_done:
                     # skip staging requests that are ongoing prefetch
+                    tuning_recorder.observe("prefill.prefetch_pending")
                     continue
                 # Pop the L3-loaded span. Unified cache exposes its absolute
                 # start so cache-mode L2/L3 attribution survives L3-tail eviction.
@@ -4202,6 +4206,7 @@ class Scheduler(
                 staging_ready = buffer_pipeline.prepare_staged_prefetch(req)
                 req.time_stats.observe_storage_staging_ready(staging_ready)
                 if not staging_ready:
+                    tuning_recorder.observe("prefill.staging_pending")
                     continue
             res = adder.add_one_req(
                 req,

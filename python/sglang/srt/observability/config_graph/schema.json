@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sglang.ai/schemas/config-observability-v1.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "base_commit",
+    "scope",
+    "nodes",
+    "edges"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "scope": {
+      "type": "string"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "server_field",
+              "environment",
+              "mechanism",
+              "metric",
+              "decision_log"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "path",
+              "anchor"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "anchor": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "mechanism"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "behavior",
+                "conditions",
+                "confounders",
+                "hypothesis",
+                "next_test",
+                "remaining_gap",
+                "evidence"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source",
+          "target",
+          "relation"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "controls_or_constrains",
+              "observed_by",
+              "indirectly_observed_by",
+              "interacts_with"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

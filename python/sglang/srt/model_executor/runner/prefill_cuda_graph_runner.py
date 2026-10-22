@@ -127,6 +127,7 @@ from sglang.srt.model_executor.runner_utils.shared_read_event import (
     maybe_publish_prefill_shared_read_done,
 )
 from sglang.srt.model_loader.utils import resolve_language_model
+from sglang.srt.observability.tuning import recorder as tuning_recorder
 from sglang.srt.runtime_context import (
     get_exec,
     get_flags,
@@ -1341,33 +1342,52 @@ class PrefillCudaGraphRunner(BaseCudaGraphRunner):
         ) and not self.prefill_cp_bcg_input.allows_replay(
             batch_size, num_tokens, prefix_lens, contains_mm_inputs
         ):
+            tuning_recorder.observe("graph.prefill.cp_shape")
             return False
         if contains_mm_inputs and (
             self._qwen_bcg_hc_sidechannel or self._qwen_bcg_mtp_draft
         ):
+            tuning_recorder.observe("graph.prefill.multimodal")
             return False
         # Full replay bypasses forward_extend's Python image-mask guard.
         # Keep FA4 multimodal prefill eager until its full-graph path is
         # supported; both forward dispatch and the DP vote use this policy.
         if self._is_full_backend and self._fa4_prefill and contains_mm_inputs:
+            tuning_recorder.observe("graph.prefill.multimodal")
             return False
         if self._is_full_backend and batch_size > self._capture_req_slots:
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "graph.prefill.request_capacity",
+                    batch_size=batch_size,
+                    limit=self._capture_req_slots,
+                )
             return False
         if (
             self._captured_attn_metadata_max_bs is not None
             and batch_size > self._captured_attn_metadata_max_bs
         ):
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "graph.prefill.metadata_capacity",
+                    batch_size=batch_size,
+                    limit=self._captured_attn_metadata_max_bs,
+                )
             return False
         # LoRA replays need prepare_lora_batch's static metadata. lora_manager
         # keeps LoRA prefill eager on every rank under dp attention, so the
         # schedule-time vote derives this from enable_lora alone.
         if lora_ineligible:
+            tuning_recorder.observe("graph.prefill.lora")
             return False
         if is_mixed and getattr(self, "prefer_eager_mixed_prefill", False):
+            tuning_recorder.observe("graph.prefill.mixed_batch")
             return False
         if input_embeds is not None:
+            tuning_recorder.observe("graph.prefill.input_embeddings")
             return False
         if replace_embeds is not None:
+            tuning_recorder.observe("graph.prefill.replacement_embeddings")
             return False
         # Off CUDA, BCG takes the MHA companion, whose prefix path is
         # uncapturable. DSA is exempt: it stays on sparse MLA under BCG.
@@ -1379,35 +1399,57 @@ class PrefillCudaGraphRunner(BaseCudaGraphRunner):
             and any(prefix_lens)
             and not self._attn_backend_is_dsa
         ):
+            tuning_recorder.observe("graph.prefill.platform_prefix")
             return False
         # FullCG's chunked-prefix topology covers a bounded prefix. Its capture
         # flag is FullCG-only, so this is inert for the BreakableCG vote path.
         if self._has_uncapturable_chunked_prefix(prefix_lens):
+            tuning_recorder.observe("graph.prefill.prefix_coverage")
             return False
         # tc_piecewise captures with ForwardMode.EXTEND and spec_info=None.
         if is_target_verify:
+            tuning_recorder.observe("graph.prefill.target_verify")
             return False
         if (
             capture_hidden_mode is not None
             and self.capture_hidden_mode < capture_hidden_mode
         ):
+            tuning_recorder.observe("graph.prefill.hidden_mode")
             return False
         if return_logprob and not self._uses_eager_prefill_tail():
+            tuning_recorder.observe("graph.prefill.logprobs")
             return False
         # Vote on both bounds so DP ranks agree on graph versus eager.
         for context_limit in (self.max_context_size, self.max_seq_len):
             if context_limit is not None and (
                 batch_max_context_len is None or batch_max_context_len > context_limit
             ):
+                if tuning_recorder.enabled:
+                    values = {"limit": context_limit}
+                    if batch_max_context_len is not None:
+                        values["context"] = batch_max_context_len
+                    tuning_recorder.observe("graph.prefill.context_coverage", **values)
                 return False
         if num_tokens is None:
             return True
         if num_tokens > self.max_num_tokens:
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "graph.prefill.token_coverage",
+                    tokens=num_tokens,
+                    limit=self.max_num_tokens,
+                )
             return False
         # No exact-shape check: load_batch bucket-pads; only reject
         # disproportionate padding waste.
         padded_num_tokens = self._pad_to_bucket(num_tokens, self.capture_num_tokens)
         if padded_num_tokens > num_tokens * _MAX_PREFILL_CUDA_GRAPH_PADDING_FACTOR:
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "graph.prefill.padding",
+                    tokens=num_tokens,
+                    padded_tokens=padded_num_tokens,
+                )
             return False
         return True
 
@@ -1418,11 +1460,13 @@ class PrefillCudaGraphRunner(BaseCudaGraphRunner):
             forward_batch.global_num_tokens_cpu is not None
             and not forward_batch.can_run_dp_prefill_cuda_graph
         ):
+            tuning_recorder.observe("graph.prefill.dp_vote")
             return False
 
         # Every dp rank must hold tokens this forward (reads the synced
         # table post dp-padding; idle ranks vote permissively upstream).
         if self._has_inactive_dp_rank(forward_batch):
+            tuning_recorder.observe("graph.prefill.dp_inactive")
             return False
 
         # A batch can be too small to activate CP. Its unsharded inputs must
@@ -1430,6 +1474,7 @@ class PrefillCudaGraphRunner(BaseCudaGraphRunner):
         if getattr(self, "enable_cp_bcg_capture", False) and not is_cp_active(
             forward_batch
         ):
+            tuning_recorder.observe("graph.prefill.cp_inactive")
             return False
 
         # Non-DP local check (sole decision for tp-only).
@@ -1465,9 +1510,11 @@ class PrefillCudaGraphRunner(BaseCudaGraphRunner):
             ),
             batch_max_context_len=batch_max_context_len,
         ):
+            tuning_recorder.observe("graph.prefill.local_ineligible")
             return False
         if getattr(self, "enable_cp_bcg_capture", False):
             if not is_cp_active(forward_batch):
+                tuning_recorder.observe("graph.prefill.cp_inactive")
                 return False
             assert self.prefill_cp_bcg_input is not None
             if (
@@ -1479,9 +1526,11 @@ class PrefillCudaGraphRunner(BaseCudaGraphRunner):
                 )
                 is None
             ):
+                tuning_recorder.observe("graph.prefill.cp_bucket")
                 return False
         backend_can_run = self._backend_can_run_prefill_cuda_graph
         if backend_can_run is not None and not backend_can_run(forward_batch):
+            tuning_recorder.observe("graph.prefill.attention_backend")
             return False
         # Multi-req replay is supported by body-capture backends via the
         # layer_model.forward monkey-patch in replay(): the captured graph runs

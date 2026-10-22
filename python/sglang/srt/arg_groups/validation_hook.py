@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from typing import Any, Dict, List, Optional
 
@@ -309,6 +310,12 @@ def check_server_args(server_args: Any):
     # _hisparse_validation), invoked here at its legacy slot.
 
     run_post_process_pass(server_args, _hisparse_validation)
+
+    if (
+        not math.isfinite(cfg.tuning_observation_interval)
+        or cfg.tuning_observation_interval < 0
+    ):
+        raise ValueError("tuning_observation_interval must be finite and nonnegative")
 
     assert cfg.schedule_conservativeness >= 0, (
         "schedule_conservativeness must be non-negative"

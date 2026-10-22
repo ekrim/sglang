@@ -4,6 +4,7 @@ import logging
 
 from sglang.srt.environ import envs
 from sglang.srt.managers.prefill_delayer import PrefillDelayerSinglePassExecutor
+from sglang.srt.observability.tuning import recorder as tuning_recorder
 from sglang.srt.runtime_context import (
     get_disagg,
     get_exec,
@@ -841,6 +842,7 @@ class PrefillAdder:
             return AddReqResult.NO_TOKEN
 
         if self.rem_input_tokens <= 0:
+            tuning_recorder.observe("prefill.input_budget")
             return AddReqResult.OTHER
 
         if self.dllm_config is not None:
@@ -848,6 +850,7 @@ class PrefillAdder:
                 return AddReqResult.OTHER
         else:
             if self.rem_chunk_tokens is not None and self.rem_chunk_tokens <= 0:
+                tuning_recorder.observe("prefill.chunk_budget")
                 return AddReqResult.OTHER
 
         return AddReqResult.CONTINUE
@@ -907,6 +910,16 @@ class PrefillAdder:
         self.log_hit_tokens += prefix_len
         self.log_input_tokens += raw_extend_input_len
         self.log_replay_tokens += replay_len
+        if tuning_recorder.enabled:
+            values = dict(
+                extend_tokens=raw_extend_input_len,
+                replay_tokens=replay_len,
+                output_reserve_tokens=max_new_tokens,
+                input_remaining=self.rem_input_tokens,
+            )
+            if self.rem_chunk_tokens is not None:
+                values["chunk_remaining"] = self.rem_chunk_tokens
+            tuning_recorder.observe("prefill.admitted", **values)
         if retracted_stain:
             self.reprocessed_log_hit_tokens += prefix_len
             self.reprocessed_log_input_tokens += raw_extend_input_len
@@ -1352,6 +1365,7 @@ class PrefillAdder:
         self, req: Req, has_chunked_req: bool, truncation_align_size: Optional[int]
     ):
         if (x := self.prefill_max_requests) is not None and len(self.can_run_list) >= x:
+            tuning_recorder.observe("prefill.request_limit")
             return AddReqResult.OTHER
 
         if req.sampling_params.ignore_eos and getattr(self.tree_cache, "disable", True):
@@ -1408,6 +1422,7 @@ class PrefillAdder:
                     waiting_queue_len=self.waiting_queue_len,
                 )
             ):
+                tuning_recorder.observe("prefill.delayer")
                 return AddReqResult.OTHER
 
             if req.needs_host_load_back():
@@ -1548,6 +1563,12 @@ class PrefillAdder:
             # The replay rows share the chunk with the extend.
             chunk_limit -= replay_len
             if chunk_limit <= 0:
+                if tuning_recorder.enabled:
+                    tuning_recorder.observe(
+                        "prefill.replay_budget",
+                        replay_tokens=replay_len,
+                        chunk_tokens=self.rem_chunk_tokens,
+                    )
                 return AddReqResult.OTHER
         can_admit, chunk_tokens_limit = self._check_prefill_budget(
             req,
@@ -1557,6 +1578,12 @@ class PrefillAdder:
             chunk_limit=chunk_limit,
         )
         if not can_admit:
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "prefill.memory_budget",
+                    required_tokens=total_tokens,
+                    remaining_tokens=self.rem_total_tokens,
+                )
             return AddReqResult.NO_TOKEN
 
         # Without chunking, allow the first request even above the input cap.
@@ -1584,6 +1611,7 @@ class PrefillAdder:
                 and get_schedule().schedule_policy == "shortest-prefill-first"
             ):
                 # Only one unfinished chunked request can be tracked.
+                tuning_recorder.observe("prefill.chunk_slot")
                 return AddReqResult.OTHER
             if self.exact_chunk_fill:
                 # Take the remainder verbatim so the batch hits exactly
@@ -1605,6 +1633,7 @@ class PrefillAdder:
                 end = (prefix_len + extend_len) // self.page_size * self.page_size
                 extend_len = end - prefix_len
             if extend_len <= 0:
+                tuning_recorder.observe("prefill.chunk_alignment")
                 return AddReqResult.OTHER
             is_chunked = True
             max_new_tokens = 0

@@ -190,11 +190,13 @@ from sglang.srt.model_executor.runner import (
     get_batch_sizes_to_capture,
 )
 from sglang.srt.monokernels.runtime import install_monokernel_forward
+from sglang.srt.observability.tuning import recorder as tuning_recorder
 from sglang.srt.platforms import current_platform
 from sglang.srt.runtime_context import (
     assert_published,
     get_context,
     get_device,
+    get_disagg,
     get_exec,
     get_global_dwdp_manager,
     get_lora,
@@ -459,6 +461,17 @@ class ModelRunner:
         # Get available memory before model loading.
         # Stored for later use by alloc_memory_pool().
         self.init_torch_distributed()
+        if not self.is_draft_worker:
+            from sglang.srt.observability.tuning import configure
+
+            configure(
+                get_observability().tuning_observation_interval,
+                tp_rank=get_parallel().tp_rank,
+                pp_rank=get_parallel().pp_rank,
+                dp_rank=get_parallel().dp_rank,
+                attn_dp_rank=get_parallel().attn_dp_rank,
+                role=get_disagg().disaggregation_mode,
+            )
 
         # Init forward stream for overlap schedule
         self.forward_stream = torch.get_device_module(self.device).Stream()
@@ -2003,6 +2016,7 @@ class ModelRunner:
                     forward_batch,
                     pp_proxy_tensors=pp_proxy_tensors,
                 )
+                self._observe_tuning_dispatch("decode_runner", forward_batch)
                 return ModelRunnerOutput(logits_output=ret, can_run_graph=can_run_graph)
 
             # DP / MLP-sync padding + attn-tp normalization. Only the decode
@@ -2028,6 +2042,7 @@ class ModelRunner:
                     reinit_attn_backend=reinit_attn_backend,
                     forward_count=split_forward_count,
                 )
+                self._observe_tuning_dispatch("split_prefill", forward_batch)
             elif (
                 forward_batch.forward_mode.is_extend(include_draft_extend_v2=True)
                 and not isinstance(self.prefill_cuda_graph_runner, EagerRunner)
@@ -2053,11 +2068,13 @@ class ModelRunner:
                         forward_batch, **kwargs
                     )
                 can_run_graph = True
+                self._observe_tuning_dispatch("prefill_graph", forward_batch)
             else:
                 # Eager: decode / extend / idle dispatched inside the runner.
                 ret = self.eager_runner.execute(
                     forward_batch, pp_proxy_tensors=pp_proxy_tensors
                 )
+                self._observe_tuning_dispatch("eager", forward_batch)
 
             if (
                 forward_batch.global_num_tokens_cpu is not None
@@ -2066,6 +2083,39 @@ class ModelRunner:
                 forward_batch.post_forward_mlp_sync_batch(ret)
 
             return ModelRunnerOutput(logits_output=ret, can_run_graph=can_run_graph)
+
+    def _observe_tuning_dispatch(self, path, forward_batch):
+        if tuning_recorder.enabled:
+            # Graph/backend initialization happens after the constructor in some
+            # startup paths. Describe runners only when actually dispatching.
+            import json
+
+            role = "draft" if self.is_draft_worker else "target"
+            runtime = {
+                key: type(getattr(self, attr, None)).__name__
+                for key, attr in (
+                    ("decode_runner", "decode_cuda_graph_runner"),
+                    ("prefill_runner", "prefill_cuda_graph_runner"),
+                    ("attention_backend", "attn_backend"),
+                )
+            }
+            if runtime != getattr(self, "_tuning_runtime", None):
+                logger.info(
+                    "tuning_runtime %s",
+                    json.dumps(
+                        dict(
+                            schema_version=1,
+                            context=tuning_recorder.context,
+                            model_role=role,
+                            **runtime,
+                        ),
+                        sort_keys=True,
+                    ),
+                )
+                self._tuning_runtime = runtime
+            tuning_recorder.observe(
+                f"forward.{role}.{path}", batch_size=forward_batch.batch_size
+            )
 
     def _preprocess_logits(
         self,

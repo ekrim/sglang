@@ -32,6 +32,7 @@ from sglang.srt.observability.metrics_collector import (
 from sglang.srt.observability.scheduler_stage_metrics import (
     SchedulerStageMetricsRecorder,
 )
+from sglang.srt.observability.tuning import recorder as tuning_recorder
 from sglang.srt.runtime_context import (
     exports_expert_balancedness_to_prometheus,
     get_context,
@@ -250,6 +251,31 @@ class SchedulerMetricsReporter:
         )
         self._init_metrics()
         self._install_device_timer_on_runners()
+        if tuning_recorder.enabled:
+            import json
+
+            logger.info(
+                "tuning_scheduler_config %s",
+                json.dumps(
+                    dict(
+                        schema_version=1,
+                        context=tuning_recorder.context,
+                        # These are scheduler-resolved limits, after DP adjustment.
+                        limits={
+                            key: getattr(self.scheduler, key, None)
+                            for key in (
+                                "chunked_prefill_size",
+                                "max_prefill_tokens",
+                                "max_running_requests",
+                                "max_total_num_tokens",
+                                "page_size",
+                                "is_mixed_chunk",
+                            )
+                        },
+                    ),
+                    sort_keys=True,
+                ),
+            )
         # Keep log history after the existing async result copy so reporting does
         # not synchronize the model stream once per generated token.
         self._eplb_balancedness_history = [

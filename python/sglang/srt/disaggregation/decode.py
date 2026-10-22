@@ -118,6 +118,7 @@ from sglang.srt.observability.scheduler_stage_metrics import (
     SCHEDULER_STAGE_PROCESS_QUEUE,
     scheduler_stage_method,
 )
+from sglang.srt.observability.tuning import recorder as tuning_recorder
 from sglang.srt.runtime_context import (
     get_device,
     get_disagg,
@@ -1131,7 +1132,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 continue
 
             if poll == KVPoll.Bootstrapping:
-                pass
+                tuning_recorder.observe("decode.handshake_pending")
             elif poll == KVPoll.WaitingForInput:
                 decode_req.waiting_for_input = True
                 decode_req.req.time_stats.set_bootstrap_done_time()
@@ -1435,6 +1436,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 continue
 
             if self.req_to_metadata_buffer_idx_allocator.available_size() <= 0:
+                tuning_recorder.observe("decode.metadata_slots")
                 break
 
             if self.scheduler.enable_lora and not self.scheduler.can_schedule_lora_req(
@@ -1451,6 +1453,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 >= get_disagg().disaggregation_decode_host_receive_threshold
             ):
                 if not self._pre_alloc_host(decode_req):
+                    tuning_recorder.observe("decode.host_capacity")
                     break
                 preallocated_reqs.append(decode_req)
                 indices_to_remove.add(i)
@@ -1459,6 +1462,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 continue
 
             if self.req_to_token_pool.available_size() <= 0:
+                tuning_recorder.observe("decode.request_slots")
                 break
 
             # Reserve enough Mamba capacity for radix COW and tracking buffers
@@ -1466,9 +1470,11 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             if not ensure_mamba_capacity(
                 self.req_to_token_pool, [decode_req.req], self.tree_cache
             ):
+                tuning_recorder.observe("decode.mamba_capacity")
                 break
 
             if hisparse_req_budget <= 0:
+                tuning_recorder.observe("decode.hisparse_capacity")
                 break
 
             # Memory estimation: don't add if the projected memory cannot be met
@@ -1554,6 +1560,15 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 full_allocatable_tokens=full_allocatable_tokens,
                 swa_allocatable_tokens=swa_allocatable_tokens,
             ):
+                if tuning_recorder.enabled:
+                    values = dict(
+                        full_required=full_required_for_admission,
+                        full_budget=full_allocatable_tokens,
+                        swa_required=swa_required_for_admission,
+                    )
+                    if swa_allocatable_tokens is not None:
+                        values["swa_budget"] = swa_allocatable_tokens
+                    tuning_recorder.observe("decode.kv_budget", **values)
                 if prefix_match is not None and prefix_match.l1_prefix_len > 0:
                     self.tree_cache.unlock(decode_req.req.lock)
                     decode_req.req.lock = None
@@ -1589,6 +1604,12 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 prefix_len,
                 total_prefix_len,
             )
+            if tuning_recorder.enabled:
+                tuning_recorder.observe(
+                    "decode.preallocated",
+                    new_tokens=required_alloc_tokens,
+                    prefix_tokens=prefix_len,
+                )
             decode_req.prefix_match = prefix_match
             if self.scheduler.enable_decode_hicache:
                 self._start_hicache_prefetch(decode_req.req, prefix_match)

@@ -1,0 +1,4161 @@
+{
+  "schema_version": 1,
+  "base_commit": "f91b81b82ac7701b16fff92f9e2a24e840475b37",
+  "scope": "Prioritized causal audit, not every SGLang option. Full declarative field inventory records unaudited remainder.",
+  "nodes": [
+    {
+      "id": "mechanism.prefill_tokens",
+      "kind": "mechanism",
+      "title": "How much prefill fits in this iteration",
+      "source": {
+        "path": "python/sglang/srt/managers/schedule_policy.py",
+        "anchor": "def budget_state"
+      },
+      "behavior": "The adder continues the unfinished request, then scans waiting requests. Compute budgets charge extend plus replay rows. Exhaustion can stop a pass while KV is still free.",
+      "conditions": [
+        "AGG or PD prefill; normal PrefillAdder path."
+      ],
+      "confounders": [
+        "DP divides declared chunk size; mixed decode consumes budget; page alignment; replay rows; max request limits; one unchunked request can exceed nominal input cap."
+      ],
+      "hypothesis": "If token budget binds with queued work and spare KV, a larger batch may improve P capacity; it may increase TTFT/ITL and workspace demand.",
+      "next_test": "At fixed per-rank request cap, raise only the effective token budget. Compare admitted extend/replay rows, P stage time, queue slope and live decode activity.",
+      "remaining_gap": "Not all specialized DLLM/ignore-EOS stops have reason logs; inspect residual budget/queue evidence.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.chunked_prefill_size",
+      "name": "chunked_prefill_size",
+      "kind": "server_field",
+      "cli_candidate": "--chunked-prefill-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "chunked_prefill_size:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.max_prefill_tokens",
+      "name": "max_prefill_tokens",
+      "kind": "server_field",
+      "cli_candidate": "--max-prefill-tokens",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "max_prefill_tokens:"
+      },
+      "declared_default": "16384",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.enable_dynamic_chunking",
+      "name": "enable_dynamic_chunking",
+      "kind": "server_field",
+      "cli_candidate": "--enable-dynamic-chunking",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "enable_dynamic_chunking:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.prefill_effective_tokens_total",
+      "kind": "metric",
+      "name": "sglang:prefill_effective_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:prefill_effective_tokens_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_queue_reqs",
+      "kind": "metric",
+      "name": "sglang:num_queue_reqs",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_queue_reqs"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_running_reqs",
+      "kind": "metric",
+      "name": "sglang:num_running_reqs",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_running_reqs"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.prefill.input_budget",
+      "kind": "decision_log",
+      "name": "prefill.input_budget",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.input_budget\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.chunk_budget",
+      "kind": "decision_log",
+      "name": "prefill.chunk_budget",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.chunk_budget\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.admitted",
+      "kind": "decision_log",
+      "name": "prefill.admitted",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.admitted\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "chunk_remaining",
+        "extend_tokens",
+        "input_remaining",
+        "output_reserve_tokens",
+        "replay_tokens"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.replay_budget",
+      "kind": "decision_log",
+      "name": "prefill.replay_budget",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.replay_budget\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "chunk_tokens",
+        "replay_tokens"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.chunk_alignment",
+      "kind": "decision_log",
+      "name": "prefill.chunk_alignment",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.chunk_alignment\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.request_admission",
+      "kind": "mechanism",
+      "title": "Request rows and request-count limits",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler.py",
+        "anchor": "def get_num_allocatable_reqs"
+      },
+      "behavior": "Request-table availability and running-request limits bound admission independently of KV token capacity. Continued requests can already hold their rows.",
+      "conditions": [
+        "Interpret separately for P, AGG and D; D has dedicated preallocation."
+      ],
+      "confounders": [
+        "Per-rank effective limits; held rows; in-transfer rows; PP microbatches; LoRA eligibility; graph capture size."
+      ],
+      "hypothesis": "If row/count gates bind before memory, more rows may raise occupancy; it can also increase graph/workspace memory and decode latency.",
+      "next_test": "Compare row gate observations with free tokens and graph capacity before increasing the cap.",
+      "remaining_gap": "No occupancy gauge for every metadata/request allocator; reason logs identify encountered gates, not all concurrent limits.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.max_running_requests",
+      "name": "max_running_requests",
+      "kind": "server_field",
+      "cli_candidate": "--max-running-requests",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "max_running_requests:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.prefill_max_requests",
+      "name": "prefill_max_requests",
+      "kind": "server_field",
+      "cli_candidate": "--prefill-max-requests",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "prefill_max_requests:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.kv_available_tokens",
+      "kind": "metric",
+      "name": "sglang:kv_available_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_available_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.prefill.request_slots",
+      "kind": "decision_log",
+      "name": "prefill.request_slots",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.request_slots\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.request_limit",
+      "kind": "decision_log",
+      "name": "prefill.request_limit",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.request_limit\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.decode.request_slots",
+      "kind": "decision_log",
+      "name": "decode.request_slots",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"decode.request_slots\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.decode.metadata_slots",
+      "kind": "decision_log",
+      "name": "decode.metadata_slots",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"decode.metadata_slots\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.future_growth",
+      "kind": "mechanism",
+      "title": "Admission reserves space for future output",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler_components/new_token_ratio_tracker.py",
+        "anchor": "def from_config"
+      },
+      "behavior": "The running-request future-growth estimate uses a changing ratio. Candidate admission and special paths have their own bounds; this is not a physical reservation of every predicted token.",
+      "conditions": [
+        "Most relevant to AGG; P-only outputs and D preallocation use different accounting."
+      ],
+      "confounders": [
+        "Attention DP scales configured conservativeness by 0.3 in parallel_hook; output limits; ignore_eos; retraction resets; cache locks."
+      ],
+      "hypothesis": "Lower headroom may admit more work when output limits overpredict actual answers, but can cause retraction when outputs run long.",
+      "next_test": "Hold output distribution constant; compare occupancy, retracted tokens, latency tails and memory-budget refusals.",
+      "remaining_gap": "No claim that one ratio controls every admission path; logs report reservations rather than attributing all refusals to this knob.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.schedule_conservativeness",
+      "name": "schedule_conservativeness",
+      "kind": "server_field",
+      "cli_candidate": "--schedule-conservativeness",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "schedule_conservativeness:"
+      },
+      "declared_default": "1.0",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.SGLANG_INIT_NEW_TOKEN_RATIO",
+      "name": "SGLANG_INIT_NEW_TOKEN_RATIO",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_INIT_NEW_TOKEN_RATIO"
+      }
+    },
+    {
+      "id": "config.SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR",
+      "name": "SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR"
+      }
+    },
+    {
+      "id": "config.SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS",
+      "name": "SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS"
+      }
+    },
+    {
+      "id": "metric.new_token_ratio",
+      "kind": "metric",
+      "name": "sglang:new_token_ratio",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:new_token_ratio"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_retracted_requests_total",
+      "kind": "metric",
+      "name": "sglang:num_retracted_requests_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_retracted_requests_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.prefill.memory_budget",
+      "kind": "decision_log",
+      "name": "prefill.memory_budget",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.memory_budget\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "remaining_tokens",
+        "required_tokens"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.full_capacity",
+      "kind": "decision_log",
+      "name": "prefill.full_capacity",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.full_capacity\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "remaining",
+        "required"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.decode_reservation",
+      "kind": "mechanism",
+      "title": "Decode capacity before incoming transfer",
+      "source": {
+        "path": "python/sglang/srt/disaggregation/decode.py",
+        "anchor": "def _required_admission_tokens"
+      },
+      "behavior": "D admits destination storage before publishing indices. It accounts for request rows, metadata rows, FULL/SWA constraints, active headroom and recoverability of in-flight work.",
+      "conditions": [
+        "PD decode; regular device preallocation instrumentation."
+      ],
+      "confounders": [
+        "Decode prefix hits and pending loadback; allocator shared-pool feasibility; max output; active/retracted requests; host receive changes path."
+      ],
+      "hypothesis": "Extra slots help only if rows bind; they do not create KV capacity. Lower headroom may trade concurrency for retraction risk.",
+      "next_test": "First separate handshake, slot and KV gates. If KV binds compare required/budget values and per-pool capacity; change one limit.",
+      "remaining_gap": "KV failure can be joint physical capacity even if scalar FULL/SWA budgets look sufficient. Host allocation success and retransfers are not fully instrumented.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.num_reserved_decode_tokens",
+      "name": "num_reserved_decode_tokens",
+      "kind": "server_field",
+      "cli_candidate": "--num-reserved-decode-tokens",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "num_reserved_decode_tokens:"
+      },
+      "declared_default": "512",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.disaggregation_decode_extra_slots",
+      "name": "disaggregation_decode_extra_slots",
+      "kind": "server_field",
+      "cli_candidate": "--disaggregation-decode-extra-slots",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "disaggregation_decode_extra_slots:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.disaggregation_decode_host_receive_threshold",
+      "name": "disaggregation_decode_host_receive_threshold",
+      "kind": "server_field",
+      "cli_candidate": "--disaggregation-decode-host-receive-threshold",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "disaggregation_decode_host_receive_threshold:"
+      },
+      "declared_default": "1.0",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.num_decode_prealloc_queue_reqs",
+      "kind": "metric",
+      "name": "sglang:num_decode_prealloc_queue_reqs",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_decode_prealloc_queue_reqs"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_decode_transfer_queue_reqs",
+      "kind": "metric",
+      "name": "sglang:num_decode_transfer_queue_reqs",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_decode_transfer_queue_reqs"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.pending_prealloc_token_usage",
+      "kind": "metric",
+      "name": "sglang:pending_prealloc_token_usage",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:pending_prealloc_token_usage"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_decode_host_receive_queue_reqs",
+      "kind": "metric",
+      "name": "sglang:num_decode_host_receive_queue_reqs",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_decode_host_receive_queue_reqs"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.decode.kv_budget",
+      "kind": "decision_log",
+      "name": "decode.kv_budget",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"decode.kv_budget\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "full_budget",
+        "full_required",
+        "swa_budget",
+        "swa_required"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.decode.preallocated",
+      "kind": "decision_log",
+      "name": "decode.preallocated",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"decode.preallocated\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "new_tokens",
+        "prefix_tokens"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.decode.host_capacity",
+      "kind": "decision_log",
+      "name": "decode.host_capacity",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"decode.host_capacity\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.decode.mamba_capacity",
+      "kind": "decision_log",
+      "name": "decode.mamba_capacity",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"decode.mamba_capacity\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.decode.hisparse_capacity",
+      "kind": "decision_log",
+      "name": "decode.hisparse_capacity",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"decode.hisparse_capacity\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.readiness",
+      "kind": "mechanism",
+      "title": "When P runs and D reserves KV",
+      "source": {
+        "path": "python/sglang/srt/disaggregation/prefill.py",
+        "anchor": "def check_bootstrap"
+      },
+      "behavior": "Optimism permits P computation before destination indices. Deferred allocation waits for prefill readiness; notification does not guarantee capacity or transfer overlap.",
+      "conditions": [
+        "PD; compare the resolved policy on both roles."
+      ],
+      "confounders": [
+        "Network/bootstrap discovery; D memory pressure; poll cadence; current forward length; cancellation/retraction."
+      ],
+      "hypothesis": "Deferring reservations may free D for ready requests under long prefills, but adds handoff latency when capacity is plentiful.",
+      "next_test": "Use matched long/short prompt distributions at low and high concurrency. Compare active D, prealloc usage, handoff latency, retries and TTFT.",
+      "remaining_gap": "Bootstrapping status combines discovery and readiness; do not label all handshake_pending as waiting for prefill completion. Existing latency histograms are completion-biased.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.disaggregation_decode_allocation_policy",
+      "name": "disaggregation_decode_allocation_policy",
+      "kind": "server_field",
+      "cli_candidate": "--disaggregation-decode-allocation-policy",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "disaggregation_decode_allocation_policy:"
+      },
+      "declared_default": "'early'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.optimistic_prefill_attempts",
+      "name": "optimistic_prefill_attempts",
+      "kind": "server_field",
+      "cli_candidate": "--optimistic-prefill-attempts",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "optimistic_prefill_attempts:"
+      },
+      "declared_default": "0",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.disaggregation_decode_polling_interval",
+      "name": "disaggregation_decode_polling_interval",
+      "kind": "server_field",
+      "cli_candidate": "--disaggregation-decode-polling-interval",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "disaggregation_decode_polling_interval:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.num_prefill_bootstrap_queue_reqs",
+      "kind": "metric",
+      "name": "sglang:num_prefill_bootstrap_queue_reqs",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_prefill_bootstrap_queue_reqs"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_prefill_inflight_queue_reqs",
+      "kind": "metric",
+      "name": "sglang:num_prefill_inflight_queue_reqs",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_prefill_inflight_queue_reqs"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.kv_transfer_bootstrap_ms",
+      "kind": "metric",
+      "name": "sglang:kv_transfer_bootstrap_ms",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_transfer_bootstrap_ms"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.kv_transfer_alloc_ms",
+      "kind": "metric",
+      "name": "sglang:kv_transfer_alloc_ms",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_transfer_alloc_ms"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_prefill_retries_total",
+      "kind": "metric",
+      "name": "sglang:num_prefill_retries_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_prefill_retries_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.decode.handshake_pending",
+      "kind": "decision_log",
+      "name": "decode.handshake_pending",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"decode.handshake_pending\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.kv_memory",
+      "kind": "mechanism",
+      "title": "Actual device KV capacity",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler_components/pool_stats_observer.py",
+        "anchor": "class SchedulerPoolStatsObserver"
+      },
+      "behavior": "Resolved pool capacity depends on weights, cache layout, workspace, graph capture and static-memory budgeting; a declared fraction alone is not the result.",
+      "conditions": [
+        "Model and allocator specific; compare equal checkpoints and quantization."
+      ],
+      "confounders": [
+        "Explicit max_total_tokens cap; compression accounting; graph capture size; DSpark draft pools; locked prefix pages."
+      ],
+      "hypothesis": "More actual available KV can improve concurrency/cache retention when memory binds; increasing fraction is useless if another cap binds.",
+      "next_test": "Record startup capacities and graph/workspace memory; compare per-pool pressure and refusals before changing fraction.",
+      "remaining_gap": "Reserved workspace overhead by backend is not fully exported; no GPU-memory polling added.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.mem_fraction_static",
+      "name": "mem_fraction_static",
+      "kind": "server_field",
+      "cli_candidate": "--mem-fraction-static",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "mem_fraction_static:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.max_total_tokens",
+      "name": "max_total_tokens",
+      "kind": "server_field",
+      "cli_candidate": "--max-total-tokens",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "max_total_tokens:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.kv_cache_dtype",
+      "name": "kv_cache_dtype",
+      "kind": "server_field",
+      "cli_candidate": "--kv-cache-dtype",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/model.py",
+        "anchor": "kv_cache_dtype:"
+      },
+      "declared_default": "'auto'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.page_size",
+      "name": "page_size",
+      "kind": "server_field",
+      "cli_candidate": "--page-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "page_size:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.max_total_num_tokens",
+      "kind": "metric",
+      "name": "sglang:max_total_num_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:max_total_num_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.kv_cache_memory_usage_gb",
+      "kind": "metric",
+      "name": "sglang:kv_cache_memory_usage_gb",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_cache_memory_usage_gb"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.weight_memory_usage_gb",
+      "kind": "metric",
+      "name": "sglang:weight_memory_usage_gb",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:weight_memory_usage_gb"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.graph_memory_usage_gb",
+      "kind": "metric",
+      "name": "sglang:graph_memory_usage_gb",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:graph_memory_usage_gb"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.kv_evictable_tokens",
+      "kind": "metric",
+      "name": "sglang:kv_evictable_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_evictable_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.kv_used_tokens",
+      "kind": "metric",
+      "name": "sglang:kv_used_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_used_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "mechanism.hybrid_pools",
+      "kind": "mechanism",
+      "title": "FULL, SWA and state compete differently",
+      "source": {
+        "path": "python/sglang/srt/mem_cache/prefill_budget.py",
+        "anchor": "class SharedSWAPrefillBudget"
+      },
+      "behavior": "Fixed pools and shared-byte allocators have different feasibility checks. SWA can limit a request or shrink its chunk even with FULL tokens available.",
+      "conditions": [
+        "Only hybrid attention/state models and supported allocator variants."
+      ],
+      "confounders": [
+        "Request rings; bounded replay retention; prefix eviction; shared-pool holes/compaction."
+      ],
+      "hypothesis": "Rebalancing pools can resolve a one-pool bottleneck; unified memory changes the tradeoff rather than guaranteeing a win.",
+      "next_test": "Compare simultaneous FULL/SWA/state headroom and failures; vary ratio only with matching allocator/replay settings.",
+      "remaining_gap": "Joint shared-byte shortfall not expressible as one token count; logs deliberately do not invent a limiting pool.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.swa_full_tokens_ratio",
+      "name": "swa_full_tokens_ratio",
+      "kind": "server_field",
+      "cli_candidate": "--swa-full-tokens-ratio",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "swa_full_tokens_ratio:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.max_mamba_cache_size",
+      "name": "max_mamba_cache_size",
+      "kind": "server_field",
+      "cli_candidate": "--max-mamba-cache-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "max_mamba_cache_size:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.mamba_full_memory_ratio",
+      "name": "mamba_full_memory_ratio",
+      "kind": "server_field",
+      "cli_candidate": "--mamba-full-memory-ratio",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "mamba_full_memory_ratio:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.enable_unified_memory",
+      "name": "enable_unified_memory",
+      "kind": "server_field",
+      "cli_candidate": "--enable-unified-memory",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "enable_unified_memory:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.swa_prefix_tails",
+      "name": "swa_prefix_tails",
+      "kind": "server_field",
+      "cli_candidate": "--swa-prefix-tails",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "swa_prefix_tails:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.full_token_usage",
+      "kind": "metric",
+      "name": "sglang:full_token_usage",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:full_token_usage"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.swa_token_usage",
+      "kind": "metric",
+      "name": "sglang:swa_token_usage",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:swa_token_usage"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.mamba_usage",
+      "kind": "metric",
+      "name": "sglang:mamba_usage",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:mamba_usage"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.swa_available_tokens",
+      "kind": "metric",
+      "name": "sglang:swa_available_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:swa_available_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.mamba_available_tokens",
+      "kind": "metric",
+      "name": "sglang:mamba_available_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:mamba_available_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.max_total_num_tokens_swa",
+      "kind": "metric",
+      "name": "sglang:max_total_num_tokens_swa",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:max_total_num_tokens_swa"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.prefill.swa_capacity",
+      "kind": "decision_log",
+      "name": "prefill.swa_capacity",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.swa_capacity\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "remaining",
+        "required"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.shared_capacity",
+      "kind": "decision_log",
+      "name": "prefill.shared_capacity",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.shared_capacity\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "full_required",
+        "swa_required"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.swa_chunk_cap",
+      "kind": "decision_log",
+      "name": "prefill.swa_chunk_cap",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.swa_chunk_cap\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "original",
+        "reduced"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.cache_reuse",
+      "kind": "mechanism",
+      "title": "Prefix reuse versus recomputation",
+      "source": {
+        "path": "python/sglang/srt/managers/schedule_policy.py",
+        "anchor": "def _account_prefill_cache_admission"
+      },
+      "behavior": "Prefix matching reduces new work; the useful hit depends on device, host or storage location and required replay.",
+      "conditions": [
+        "Cache producers and metrics differ by cache implementation; D cache opt-in separate."
+      ],
+      "confounders": [
+        "Router affinity; warmup/returning turns; eviction; requests retracted/recomputed; replayed cached rows."
+      ],
+      "hypothesis": "A high hit rate can coexist with slow prefill if hits require loadback or replay; nominal matched tokens are not all avoided GPU work.",
+      "next_test": "Use device/host/storage hit token rates, actual extend/replay work and loadback cost on matched traces.",
+      "remaining_gap": "Cache metrics alone cannot establish counterfactual recompute savings.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.disable_radix_cache",
+      "name": "disable_radix_cache",
+      "kind": "server_field",
+      "cli_candidate": "--disable-radix-cache",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "disable_radix_cache:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.radix_eviction_policy",
+      "name": "radix_eviction_policy",
+      "kind": "server_field",
+      "cli_candidate": "--radix-eviction-policy",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "radix_eviction_policy:"
+      },
+      "declared_default": "'lru'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.disaggregation_decode_enable_radix_cache",
+      "name": "disaggregation_decode_enable_radix_cache",
+      "kind": "server_field",
+      "cli_candidate": "--disaggregation-decode-enable-radix-cache",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "disaggregation_decode_enable_radix_cache:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.cache_hit_rate",
+      "kind": "metric",
+      "name": "sglang:cache_hit_rate",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:cache_hit_rate"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.evicted_tokens_total",
+      "kind": "metric",
+      "name": "sglang:evicted_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:evicted_tokens_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.load_back_tokens_total",
+      "kind": "metric",
+      "name": "sglang:load_back_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:load_back_tokens_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "mechanism.host_cache",
+      "kind": "mechanism",
+      "title": "Host tier size and movement",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler.py",
+        "anchor": "check_prefetch_progress"
+      },
+      "behavior": "Host/storage hits must become usable on device; prefetch and staging can defer an otherwise admissible request.",
+      "conditions": [
+        "HiCache/storage enabled and relevant metric producer instantiated."
+      ],
+      "confounders": [
+        "Host Engram footprint; NUMA/huge pages; device victims; returning-turn locality; storage backend; write policy."
+      ],
+      "hypothesis": "Larger host cache helps retention only if there is host memory and useful reuse; faster copy can help when loadback lies on the critical path.",
+      "next_test": "Hold hit distribution constant for IO backend comparison; inspect pending gates and H2D time, not just end-of-run throughput.",
+      "remaining_gap": "No exact exposed-vs-overlapped H2D time; generic copy metrics can aggregate different transfers.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.enable_hierarchical_cache",
+      "name": "enable_hierarchical_cache",
+      "kind": "server_field",
+      "cli_candidate": "--enable-hierarchical-cache",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "enable_hierarchical_cache:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.hicache_ratio",
+      "name": "hicache_ratio",
+      "kind": "server_field",
+      "cli_candidate": "--hicache-ratio",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "hicache_ratio:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.hicache_size",
+      "name": "hicache_size",
+      "kind": "server_field",
+      "cli_candidate": "--hicache-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "hicache_size:"
+      },
+      "declared_default": "0",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.hicache_host_memory_fraction",
+      "name": "hicache_host_memory_fraction",
+      "kind": "server_field",
+      "cli_candidate": "--hicache-host-memory-fraction",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "hicache_host_memory_fraction:"
+      },
+      "declared_default": "0.8",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.hicache_io_backend",
+      "name": "hicache_io_backend",
+      "kind": "server_field",
+      "cli_candidate": "--hicache-io-backend",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "hicache_io_backend:"
+      },
+      "declared_default": "'kernel'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.hicache_mem_layout",
+      "name": "hicache_mem_layout",
+      "kind": "server_field",
+      "cli_candidate": "--hicache-mem-layout",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "hicache_mem_layout:"
+      },
+      "declared_default": "'page_first'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.hicache_write_policy",
+      "name": "hicache_write_policy",
+      "kind": "server_field",
+      "cli_candidate": "--hicache-write-policy",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "hicache_write_policy:"
+      },
+      "declared_default": "'write_through'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.hicache_storage_backend",
+      "name": "hicache_storage_backend",
+      "kind": "server_field",
+      "cli_candidate": "--hicache-storage-backend",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "hicache_storage_backend:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.hicache_storage_prefetch_policy",
+      "name": "hicache_storage_prefetch_policy",
+      "kind": "server_field",
+      "cli_candidate": "--hicache-storage-prefetch-policy",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/memory.py",
+        "anchor": "hicache_storage_prefetch_policy:"
+      },
+      "declared_default": "'timeout'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.hicache_host_used_tokens",
+      "kind": "metric",
+      "name": "sglang:hicache_host_used_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:hicache_host_used_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.hicache_host_total_tokens",
+      "kind": "metric",
+      "name": "sglang:hicache_host_total_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:hicache_host_total_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.load_back_duration_seconds",
+      "kind": "metric",
+      "name": "sglang:load_back_duration_seconds",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:load_back_duration_seconds"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.load_back_bytes_total",
+      "kind": "metric",
+      "name": "sglang:load_back_bytes_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:load_back_bytes_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.hicache_backup_bytes_total",
+      "kind": "metric",
+      "name": "sglang:hicache_backup_bytes_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:hicache_backup_bytes_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.storage_prefetch_unfulfilled_tokens_total",
+      "kind": "metric",
+      "name": "sglang:storage_prefetch_unfulfilled_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:storage_prefetch_unfulfilled_tokens_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.prefill.prefetch_pending",
+      "kind": "decision_log",
+      "name": "prefill.prefetch_pending",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.prefetch_pending\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.staging_pending",
+      "kind": "decision_log",
+      "name": "prefill.staging_pending",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.staging_pending\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.parallel_geometry",
+      "kind": "mechanism",
+      "title": "Per-rank budgets and DP cooperation",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/parallel_hook.py",
+        "anchor": "original_chunked_prefill_size"
+      },
+      "behavior": "Parallelism resolves effective per-rank limits and collective work. Attention DP divides the prefill chunk; synchronized ranks can prevent local graph replay.",
+      "conditions": [
+        "DP metrics need their producer/configuration; per-rank identity required."
+      ],
+      "confounders": [
+        "Asymmetric P/D sizes; collective fabric; routing imbalance; effective request caps; PP microbatches.",
+        "Current main separates replica dp_size from attn_dp_size. Deprecated --dp-size N --enable-dp-attention resolves to attn_dp_size=N and dp_size=1; compare resolved settings, not old recipe spellings."
+      ],
+      "hypothesis": "Scaling width can lower utilization if ranks wait or cannot form useful batches; larger declared batch is not necessarily larger per-rank work.",
+      "next_test": "Record resolved sizes, plot per-rank work and waiting; compare at fixed total GPUs and distinguish P capacity from D service rate.",
+      "remaining_gap": "No built-in cross-service ratio recommendation; deployment worker counts belong to launcher, not a single SGLang flag.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.tp_size",
+      "name": "tp_size",
+      "kind": "server_field",
+      "cli_candidate": "--tp-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/parallel.py",
+        "anchor": "tp_size:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.dp_size",
+      "name": "dp_size",
+      "kind": "server_field",
+      "cli_candidate": "--dp-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/parallel.py",
+        "anchor": "dp_size:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.ep_size",
+      "name": "ep_size",
+      "kind": "server_field",
+      "cli_candidate": "--ep-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/parallel.py",
+        "anchor": "ep_size:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.pp_size",
+      "name": "pp_size",
+      "kind": "server_field",
+      "cli_candidate": "--pp-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/parallel.py",
+        "anchor": "pp_size:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.enable_dp_attention",
+      "name": "enable_dp_attention",
+      "kind": "server_field",
+      "cli_candidate": null,
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/parallel.py",
+        "anchor": "enable_dp_attention:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.dp_attention_token_imbalance_ratio",
+      "kind": "metric",
+      "name": "sglang:dp_attention_token_imbalance_ratio",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:dp_attention_token_imbalance_ratio"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.dp_attention_sync_wait_seconds",
+      "kind": "metric",
+      "name": "sglang:dp_attention_sync_wait_seconds",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:dp_attention_sync_wait_seconds"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.dp_cooperation_realtime_tokens_total",
+      "kind": "metric",
+      "name": "sglang:dp_cooperation_realtime_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:dp_cooperation_realtime_tokens_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.dp_attention_tokens_total",
+      "kind": "metric",
+      "name": "sglang:dp_attention_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:dp_attention_tokens_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.graph.prefill.dp_vote",
+      "kind": "decision_log",
+      "name": "graph.prefill.dp_vote",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.dp_vote\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.dp_inactive",
+      "kind": "decision_log",
+      "name": "graph.prefill.dp_inactive",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.dp_inactive\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.graph_dispatch",
+      "kind": "mechanism",
+      "title": "Graph actually used versus enabled",
+      "source": {
+        "path": "python/sglang/srt/model_executor/runner/prefill_cuda_graph_runner.py",
+        "anchor": "def can_replay_locally"
+      },
+      "behavior": "Graph replay requires eligible shape, context, features, backend and DP agreement. Requested enablement does not imply covered AgentX steps.",
+      "conditions": [
+        "Actual dispatch counters at ModelRunner; local eligibility can also be checked during scheduling."
+      ],
+      "confounders": [
+        "Warmup/capture vs serving; capture memory shrinks KV; mixed modes; replay tail; runner may execute some operations eagerly."
+      ],
+      "hypothesis": "Wider capture coverage may remove CPU launch overhead but costs memory; benefit requires actual replay on the workload.",
+      "next_test": "Verify constructed runner logs and dispatch after warmup, diagnose first eligibility failure; compare paired graph on/off with fixed capacities.",
+      "remaining_gap": "Eligibility event counts can include schedule-time and forward-time checks; cannot divide them by forwards. Not all decode fallback reasons are instrumented. Dispatch is not proof every layer used a graph.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.cuda_graph_backend_prefill",
+      "name": "cuda_graph_backend_prefill",
+      "kind": "server_field",
+      "cli_candidate": "--cuda-graph-backend-prefill",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "cuda_graph_backend_prefill:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.cuda_graph_backend_decode",
+      "name": "cuda_graph_backend_decode",
+      "kind": "server_field",
+      "cli_candidate": "--cuda-graph-backend-decode",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "cuda_graph_backend_decode:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.cuda_graph_max_bs_prefill",
+      "name": "cuda_graph_max_bs_prefill",
+      "kind": "server_field",
+      "cli_candidate": "--cuda-graph-max-bs-prefill",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "cuda_graph_max_bs_prefill:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.cuda_graph_max_bs_decode",
+      "name": "cuda_graph_max_bs_decode",
+      "kind": "server_field",
+      "cli_candidate": "--cuda-graph-max-bs-decode",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "cuda_graph_max_bs_decode:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.cuda_graph_prefill_max_context",
+      "name": "cuda_graph_prefill_max_context",
+      "kind": "server_field",
+      "cli_candidate": "--cuda-graph-prefill-max-context",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "cuda_graph_prefill_max_context:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.cuda_graph_max_seq_len_prefill",
+      "name": "cuda_graph_max_seq_len_prefill",
+      "kind": "server_field",
+      "cli_candidate": "--cuda-graph-max-seq-len-prefill",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "cuda_graph_max_seq_len_prefill:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.disable_prefill_cuda_graph",
+      "name": "disable_prefill_cuda_graph",
+      "kind": "server_field",
+      "cli_candidate": "--disable-prefill-cuda-graph",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "disable_prefill_cuda_graph:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.disable_decode_cuda_graph",
+      "name": "disable_decode_cuda_graph",
+      "kind": "server_field",
+      "cli_candidate": "--disable-decode-cuda-graph",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "disable_decode_cuda_graph:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.enable_torch_compile",
+      "name": "enable_torch_compile",
+      "kind": "server_field",
+      "cli_candidate": "--enable-torch-compile",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "enable_torch_compile:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.cuda_graph_passes_total",
+      "kind": "metric",
+      "name": "sglang:cuda_graph_passes_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:cuda_graph_passes_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.is_cuda_graph",
+      "kind": "metric",
+      "name": "sglang:is_cuda_graph",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:is_cuda_graph"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.forward_execution_seconds_total",
+      "kind": "metric",
+      "name": "sglang:forward_execution_seconds_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:forward_execution_seconds_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.graph.prefill.context_coverage",
+      "kind": "decision_log",
+      "name": "graph.prefill.context_coverage",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.context_coverage\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "context",
+        "limit"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.token_coverage",
+      "kind": "decision_log",
+      "name": "graph.prefill.token_coverage",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.token_coverage\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "limit",
+        "tokens"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.padding",
+      "kind": "decision_log",
+      "name": "graph.prefill.padding",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.padding\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "padded_tokens",
+        "tokens"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.request_capacity",
+      "kind": "decision_log",
+      "name": "graph.prefill.request_capacity",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.request_capacity\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size",
+        "limit"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.metadata_capacity",
+      "kind": "decision_log",
+      "name": "graph.prefill.metadata_capacity",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.metadata_capacity\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size",
+        "limit"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.mixed_batch",
+      "kind": "decision_log",
+      "name": "graph.prefill.mixed_batch",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.mixed_batch\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.attention_backend",
+      "kind": "decision_log",
+      "name": "graph.prefill.attention_backend",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.attention_backend\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.forward.target.prefill_graph",
+      "kind": "decision_log",
+      "name": "forward.target.prefill_graph",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"forward.target.prefill_graph\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.forward.target.eager",
+      "kind": "decision_log",
+      "name": "forward.target.eager",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"forward.target.eager\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.forward.target.decode_runner",
+      "kind": "decision_log",
+      "name": "forward.target.decode_runner",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"forward.target.decode_runner\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.replay",
+      "kind": "mechanism",
+      "title": "Cached rows still computed for bounded replay",
+      "source": {
+        "path": "python/sglang/srt/managers/schedule_policy.py",
+        "anchor": "def _replay_len"
+      },
+      "behavior": "Encoder replay contributes compute rows to admission; decoder replay and graph eligibility affect how repeated layers execute and how cache tails are retained.",
+      "conditions": [
+        "DSv4.1-style supported model paths."
+      ],
+      "confounders": [
+        "Graph coverage; SWA capacity; cache hits; MegaMoE max-token workspace; draft stages."
+      ],
+      "hypothesis": "Replay can free KV capacity yet introduce CPU or GPU work; its net gain depends on capacity pressure and execution path.",
+      "next_test": "Compare admitted replay rows and capacities alongside actual graph use and forward timing; separate tail-only vs full-prefill graph experiments.",
+      "remaining_gap": "Per-layer eager replay tail CPU/GPU split still requires profiler; row counts alone do not measure cost.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.enable_encoder_swa_bounded_replay",
+      "name": "enable_encoder_swa_bounded_replay",
+      "kind": "server_field",
+      "cli_candidate": "--enable-encoder-swa-bounded-replay",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "enable_encoder_swa_bounded_replay:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.enable_decoder_swa_bounded_replay",
+      "name": "enable_decoder_swa_bounded_replay",
+      "kind": "server_field",
+      "cli_candidate": "--enable-decoder-swa-bounded-replay",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "enable_decoder_swa_bounded_replay:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "mechanism.moe_backend",
+      "kind": "mechanism",
+      "title": "Backend selection and workspace",
+      "source": {
+        "path": "python/sglang/srt/layers/moe/flashinfer_megamoe.py",
+        "anchor": "def _select_megamoe_forward"
+      },
+      "behavior": "MoE runner and A2A choices interact with model, weights, dtype, workspace and library version. The selected wrapper does not prove the library internal kernel variant.",
+      "conditions": [
+        "Supported hardware, model and installed FlashInfer/DeepGEMM APIs."
+      ],
+      "confounders": [
+        "CUDA graph replay bypasses Python kernel call counters; cached autotune; fused experts; token shape/replay rows; variable expert load."
+      ],
+      "hypothesis": "A faster component can improve serving only if it is actually dispatched on the critical path and does not lose KV capacity.",
+      "next_test": "Record library versions and build config; capture kernel names outside and inside replay; qualify microbench before expensive paired serving run.",
+      "remaining_gap": "Internal Generic/GenPhase dispatch is in external libraries and not established by SGLang flags. Planned: capture-time variant manifest plus replay-key linkage; do not add Python per-kernel counters and call them runtime counts.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.moe_runner_backend",
+      "name": "moe_runner_backend",
+      "kind": "server_field",
+      "cli_candidate": "--moe-runner-backend",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "moe_runner_backend:"
+      },
+      "declared_default": "'auto'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.moe_a2a_backend",
+      "name": "moe_a2a_backend",
+      "kind": "server_field",
+      "cli_candidate": "--moe-a2a-backend",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "moe_a2a_backend:"
+      },
+      "declared_default": "'none'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
+      "name": "SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK"
+      }
+    },
+    {
+      "id": "config.SGLANG_FLASHINFER_MEGAMOE_MAX_TOKENS_PER_RANK",
+      "name": "SGLANG_FLASHINFER_MEGAMOE_MAX_TOKENS_PER_RANK",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_FLASHINFER_MEGAMOE_MAX_TOKENS_PER_RANK"
+      }
+    },
+    {
+      "id": "mechanism.expert_balance",
+      "kind": "mechanism",
+      "title": "Expert imbalance versus rebalance overhead",
+      "source": {
+        "path": "python/sglang/srt/eplb/eplb_manager.py",
+        "anchor": "class EPLBManager"
+      },
+      "behavior": "Expert placement responds to measured expert load; imbalance and rebalance costs can oppose each other.",
+      "conditions": [
+        "EPLB-compatible MoE backend and correctness fixes."
+      ],
+      "confounders": [
+        "Draft expert exclusions; redundant expert memory; synchronous moves; hot expert distribution changes with workload."
+      ],
+      "hypothesis": "Better balance may shorten wide-EP decode steps, but moving weights can cause latency spikes.",
+      "next_test": "Compare fixed placement vs EPLB with accuracy and capture smoke first; profile worst-rank MoE duration and rebalance periods.",
+      "remaining_gap": "Need bounded per-layer/rank imbalance summary and rebalance wall/exposed time; existing histogram alone is not a speedup measurement.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.enable_eplb",
+      "name": "enable_eplb",
+      "kind": "server_field",
+      "cli_candidate": "--enable-eplb",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "enable_eplb:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.ep_num_redundant_experts",
+      "name": "ep_num_redundant_experts",
+      "kind": "server_field",
+      "cli_candidate": "--ep-num-redundant-experts",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "ep_num_redundant_experts:"
+      },
+      "declared_default": "0",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.eplb_rebalance_num_iterations",
+      "name": "eplb_rebalance_num_iterations",
+      "kind": "server_field",
+      "cli_candidate": "--eplb-rebalance-num-iterations",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "eplb_rebalance_num_iterations:"
+      },
+      "declared_default": "1000",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.eplb_balancedness",
+      "kind": "metric",
+      "name": "sglang:eplb_balancedness",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:eplb_balancedness"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.eplb_gpu_physical_count",
+      "kind": "metric",
+      "name": "sglang:eplb_gpu_physical_count",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:eplb_gpu_physical_count"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "mechanism.speculation",
+      "kind": "mechanism",
+      "title": "Actual accepted work per step",
+      "source": {
+        "path": "python/sglang/srt/speculative/dspark_components/dspark_observability.py",
+        "anchor": "class DsparkInfoDumper"
+      },
+      "behavior": "Draft width determines proposed work; acceptance determines useful output. Synthetic acceptance changes the benchmark conditions.",
+      "conditions": [
+        "Speculative path and metrics producer enabled."
+      ],
+      "confounders": [
+        "Native vs simulated acceptance; backend optimizations may skip synthetic-only work; graph width; request lengths."
+      ],
+      "hypothesis": "Longer drafts help only when extra accepted tokens outweigh draft/verify work and capacity cost.",
+      "next_test": "Hold acceptance methodology constant for perf; validate native outputs separately; compare output tokens per forward second.",
+      "remaining_gap": "No portable claim that synthetic AL matches real-serving compute or accuracy.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.speculative_algorithm",
+      "name": "speculative_algorithm",
+      "kind": "server_field",
+      "cli_candidate": "--speculative-algorithm",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/spec.py",
+        "anchor": "speculative_algorithm:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.speculative_dspark_block_size",
+      "name": "speculative_dspark_block_size",
+      "kind": "server_field",
+      "cli_candidate": "--speculative-dspark-block-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/spec.py",
+        "anchor": "speculative_dspark_block_size:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.SGLANG_SIMULATE_ACC_LEN",
+      "name": "SGLANG_SIMULATE_ACC_LEN",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_SIMULATE_ACC_LEN"
+      }
+    },
+    {
+      "id": "config.SGLANG_SIMULATE_ACC_METHOD",
+      "name": "SGLANG_SIMULATE_ACC_METHOD",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_SIMULATE_ACC_METHOD"
+      }
+    },
+    {
+      "id": "config.SGLANG_SIMULATE_ACC_TOKEN_MODE",
+      "name": "SGLANG_SIMULATE_ACC_TOKEN_MODE",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_SIMULATE_ACC_TOKEN_MODE"
+      }
+    },
+    {
+      "id": "metric.spec_accept_length",
+      "kind": "metric",
+      "name": "sglang:spec_accept_length",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:spec_accept_length"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.spec_accept_rate",
+      "kind": "metric",
+      "name": "sglang:spec_accept_rate",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:spec_accept_rate"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.spec_cap_length",
+      "kind": "metric",
+      "name": "sglang:spec_cap_length",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:spec_cap_length"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.spec_block_accept_length",
+      "kind": "metric",
+      "name": "sglang:spec_block_accept_length",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:spec_block_accept_length"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.spec_num_draft_tokens",
+      "kind": "metric",
+      "name": "sglang:spec_num_draft_tokens",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:spec_num_draft_tokens"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.realtime_tokens_total",
+      "kind": "metric",
+      "name": "sglang:realtime_tokens_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:realtime_tokens_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "event.forward.draft.eager",
+      "kind": "decision_log",
+      "name": "forward.draft.eager",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"forward.draft.eager\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.forward.draft.decode_runner",
+      "kind": "decision_log",
+      "name": "forward.draft.decode_runner",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"forward.draft.decode_runner\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "mechanism.overlap",
+      "kind": "mechanism",
+      "title": "CPU scheduling exposed behind GPU work",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler_components/metrics_reporter.py",
+        "anchor": "self.scheduler_stage_metrics ="
+      },
+      "behavior": "Scheduling, receiving, transfer polling and result processing share the scheduler loop. Timing boundaries expose CPU work but sampled overlap is not exact critical-path attribution.",
+      "conditions": [
+        "enable_metrics; GPU timing/overlap needs SGLANG_ENABLE_METRICS_DEVICE_TIMER=1; mixed-chunk/interval mainly AGG."
+      ],
+      "confounders": [
+        "CPU multi-thread time can exceed wall time; graph capture; host-syncs; PDMux overlap not validated; work availability."
+      ],
+      "hypothesis": "Reducing a CPU stage helps only when it delays useful GPU work or request admission.",
+      "next_test": "Compare stage fractions and forward occupancy over the same steady window, then profile suspected synchronization.",
+      "remaining_gap": "No conversion from full/partial/none overlap samples to exact exposed milliseconds.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.disable_overlap_schedule",
+      "name": "disable_overlap_schedule",
+      "kind": "server_field",
+      "cli_candidate": "--disable-overlap-schedule",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "disable_overlap_schedule:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.scheduler_recv_interval",
+      "name": "scheduler_recv_interval",
+      "kind": "server_field",
+      "cli_candidate": "--scheduler-recv-interval",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "scheduler_recv_interval:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.enable_mixed_chunk",
+      "name": "enable_mixed_chunk",
+      "kind": "server_field",
+      "cli_candidate": "--enable-mixed-chunk",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "enable_mixed_chunk:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.prefill_decode_interval",
+      "name": "prefill_decode_interval",
+      "kind": "server_field",
+      "cli_candidate": "--prefill-decode-interval",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "prefill_decode_interval:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.scheduler_stage_seconds_total",
+      "kind": "metric",
+      "name": "sglang:scheduler_stage_seconds_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:scheduler_stage_seconds_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.scheduler_process_cpu_seconds_total",
+      "kind": "metric",
+      "name": "sglang:scheduler_process_cpu_seconds_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:scheduler_process_cpu_seconds_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.scheduler_idle_seconds_total",
+      "kind": "metric",
+      "name": "sglang:scheduler_idle_seconds_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:scheduler_idle_seconds_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.fwd_occupancy",
+      "kind": "metric",
+      "name": "sglang:fwd_occupancy",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:fwd_occupancy"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "mechanism.frontend",
+      "kind": "mechanism",
+      "title": "Requests reaching the scheduler",
+      "source": {
+        "path": "python/sglang/srt/observability/http_request_metrics.py",
+        "anchor": "class _HttpRequestMetrics"
+      },
+      "behavior": "HTTP/tokenization/streaming work can starve workers before their queues fill; PD ignores the general max_queued_requests setting.",
+      "conditions": [
+        "HTTP path; a Dynamo frontend may bypass SGLang HTTP/tokenization."
+      ],
+      "confounders": [
+        "Router placement; tokenizer backend; streaming cadence; client bottleneck; process CPU; request bursts."
+      ],
+      "hypothesis": "More frontend capacity helps if arrival at schedulers is slower than offered load while GPUs have spare capacity.",
+      "next_test": "Compare offered client rate, HTTP receipt and scheduler arrival; correlate host CPU and queues before changing tokenizer workers.",
+      "remaining_gap": "No universal cross-router request-arrival ledger; external Dynamo/OS metrics required; HTTP counters are not scheduler-arrival counters.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.tokenizer_worker_num",
+      "name": "tokenizer_worker_num",
+      "kind": "server_field",
+      "cli_candidate": "--tokenizer-worker-num",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/serving.py",
+        "anchor": "tokenizer_worker_num:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.stream_interval",
+      "name": "stream_interval",
+      "kind": "server_field",
+      "cli_candidate": "--stream-interval",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/serving.py",
+        "anchor": "stream_interval:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.max_queued_requests",
+      "name": "max_queued_requests",
+      "kind": "server_field",
+      "cli_candidate": "--max-queued-requests",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+        "anchor": "max_queued_requests:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.http_requests_total",
+      "kind": "metric",
+      "name": "sglang:http_requests_total",
+      "source": {
+        "path": "python/sglang/srt/observability/http_request_metrics.py",
+        "anchor": "sglang:http_requests_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.http_requests_active",
+      "kind": "metric",
+      "name": "sglang:http_requests_active",
+      "source": {
+        "path": "python/sglang/srt/observability/http_request_metrics.py",
+        "anchor": "sglang:http_requests_active"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_requests_total",
+      "kind": "metric",
+      "name": "sglang:num_requests_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_requests_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.time_to_first_token_seconds",
+      "kind": "metric",
+      "name": "sglang:time_to_first_token_seconds",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:time_to_first_token_seconds"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "mechanism.engram_numa",
+      "kind": "mechanism",
+      "title": "Host memory and placement",
+      "source": {
+        "path": "python/sglang/srt/layers/engram.py",
+        "anchor": "SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT"
+      },
+      "behavior": "Host table placement can free HBM while introducing host lookup/transfer cost and competing with HiCache for CPU memory.",
+      "conditions": [
+        "DSv4.1 host Engram; NUMA topology and huge-page availability matter."
+      ],
+      "confounders": [
+        "Table sharing scope per worker vs node; CPU binding actually applied; huge pages; host cache size; collective width."
+      ],
+      "hypothesis": "More HBM may improve concurrency, but host access can worsen TPOT; increasing host cache can cause host OOM.",
+      "next_test": "Record actual affinity, huge-page backing, RSS and per-node host budget; compare fixed request shapes and cache state.",
+      "remaining_gap": "No direct Engram exposed-time metric or effective placement receipt here. Use OS/profiler evidence; launch flag is not verification.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE",
+      "name": "SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE"
+      }
+    },
+    {
+      "id": "config.SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT",
+      "name": "SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT"
+      }
+    },
+    {
+      "id": "config.SGLANG_NUMA_BIND_V2",
+      "name": "SGLANG_NUMA_BIND_V2",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_NUMA_BIND_V2"
+      }
+    },
+    {
+      "id": "mechanism.transport",
+      "kind": "mechanism",
+      "title": "KV transfer versus waiting to start transfer",
+      "source": {
+        "path": "python/sglang/srt/disaggregation/decode.py",
+        "anchor": "def pop_transferred"
+      },
+      "behavior": "Destination allocation, transfer initiation, wire movement and completion observation are separate; a transfer queue does not uniquely indicate poor bandwidth.",
+      "conditions": [
+        "PD backend supports relevant metrics; distinguish transfer engine from cache storage backend."
+      ],
+      "confounders": [
+        "Rank mappings; NIC/fabric; current forward/poll interval; source readiness; completion aggregation; host receive."
+      ],
+      "hypothesis": "Faster transfer helps only when transfer lies on the exposed handoff path; a growing queue may instead reflect delayed polling or unavailable source.",
+      "next_test": "Correlate allocation, bootstrap, transfer size/latency and scheduler stage time; verify NIC placement and fabric outside SGLang.",
+      "remaining_gap": "No per-request wire-vs-poll critical-path decomposition; completed-transfer metrics omit currently stuck transfers.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.disaggregation_transfer_backend",
+      "name": "disaggregation_transfer_backend",
+      "kind": "server_field",
+      "cli_candidate": "--disaggregation-transfer-backend",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "disaggregation_transfer_backend:"
+      },
+      "declared_default": "'mooncake'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.disaggregation_ib_device",
+      "name": "disaggregation_ib_device",
+      "kind": "server_field",
+      "cli_candidate": "--disaggregation-ib-device",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "disaggregation_ib_device:"
+      },
+      "declared_default": "None",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "metric.kv_transfer_speed_gb_s",
+      "kind": "metric",
+      "name": "sglang:kv_transfer_speed_gb_s",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_transfer_speed_gb_s"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.kv_transfer_latency_ms",
+      "kind": "metric",
+      "name": "sglang:kv_transfer_latency_ms",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_transfer_latency_ms"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.kv_transfer_total_mb",
+      "kind": "metric",
+      "name": "sglang:kv_transfer_total_mb",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:kv_transfer_total_mb"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_transfer_failed_reqs_total",
+      "kind": "metric",
+      "name": "sglang:num_transfer_failed_reqs_total",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_transfer_failed_reqs_total"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "metric.num_decode_deferred_kv_release_reqs",
+      "kind": "metric",
+      "name": "sglang:num_decode_deferred_kv_release_reqs",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "sglang:num_decode_deferred_kv_release_reqs"
+      },
+      "availability": "existing; enable_metrics plus producer-specific gates; see README",
+      "interpretation": "Use per-rank time windows; source defines units, labels and update cadence."
+    },
+    {
+      "id": "mechanism.measurement",
+      "kind": "mechanism",
+      "title": "Measurement cadence and visibility",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler_components/metrics_reporter.py",
+        "anchor": "def _init_metrics"
+      },
+      "behavior": "Prometheus gauges/counters, forward-pass IPC and decision logs have different producers, clocks and coverage. Enabling a metric does not guarantee the producer updated it.",
+      "conditions": [
+        "Check enablement and rank labels before interpreting a zero or missing series."
+      ],
+      "confounders": [
+        "Decode log interval; idle/long forwards; completion-biased request histograms; sampling window; duplicate TP counts; warmup."
+      ],
+      "hypothesis": "Short live windows can reject a wrong hypothesis earlier than a full benchmark, but cannot replace a representative AgentX scored run.",
+      "next_test": "Collect 10-second decision windows and 5-second scrapes; align steady-state windows, test telemetry overhead on/off, and preserve original benchmark validation.",
+      "remaining_gap": "Decision logs are event-driven and synchronous on flush; no independent heartbeat, no proof an absent event means the system is healthy.",
+      "evidence": "code-audited; causal performance effect requires paired experiment"
+    },
+    {
+      "id": "config.enable_metrics",
+      "name": "enable_metrics",
+      "kind": "server_field",
+      "cli_candidate": "--enable-metrics",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/observability.py",
+        "anchor": "enable_metrics:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.enable_metrics_for_all_schedulers",
+      "name": "enable_metrics_for_all_schedulers",
+      "kind": "server_field",
+      "cli_candidate": "--enable-metrics-for-all-schedulers",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/observability.py",
+        "anchor": "enable_metrics_for_all_schedulers:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.decode_log_interval",
+      "name": "decode_log_interval",
+      "kind": "server_field",
+      "cli_candidate": "--decode-log-interval",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/observability.py",
+        "anchor": "decode_log_interval:"
+      },
+      "declared_default": "40",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.enable_forward_pass_metrics",
+      "name": "enable_forward_pass_metrics",
+      "kind": "server_field",
+      "cli_candidate": "--enable-forward-pass-metrics",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/observability.py",
+        "anchor": "enable_forward_pass_metrics:"
+      },
+      "declared_default": "False",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.tuning_observation_interval",
+      "name": "tuning_observation_interval",
+      "kind": "server_field",
+      "cli_candidate": "--tuning-observation-interval",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/observability.py",
+        "anchor": "tuning_observation_interval:"
+      },
+      "declared_default": "0.0",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.SGLANG_ENABLE_METRICS_DEVICE_TIMER",
+      "name": "SGLANG_ENABLE_METRICS_DEVICE_TIMER",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_ENABLE_METRICS_DEVICE_TIMER"
+      }
+    },
+    {
+      "id": "mechanism.routing",
+      "kind": "mechanism",
+      "title": "Routing locality and load",
+      "source": {
+        "path": "sgl-model-gateway/src/policies/cache_aware.rs",
+        "anchor": "impl LoadBalancingPolicy for CacheAwarePolicy"
+      },
+      "behavior": "The gateway uses its own prefix approximation and worker load, not the scheduler radix tree. A deployment using Dynamo has a different policy and telemetry owner.",
+      "conditions": [
+        "Identify the deployed router implementation first."
+      ],
+      "confounders": [
+        "Session affinity, stale cache records, P/D role-specific worker pools, request distribution."
+      ],
+      "hypothesis": "Locality can reduce prefill work, while overconcentration can increase queue time.",
+      "next_test": "Compare per-worker arrival/queue slopes and tier hit rates on the same trace; use gateway/Dynamo routing metrics.",
+      "remaining_gap": "Router decision explanations are not added to either Rust gateway or external Dynamo by this patch.",
+      "evidence": "gateway source-audited; external Dynamo integration not audited in this branch"
+    },
+    {
+      "id": "event.graph.prefill.cp_bucket",
+      "kind": "decision_log",
+      "name": "graph.prefill.cp_bucket",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.cp_bucket\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.cp_inactive",
+      "kind": "decision_log",
+      "name": "graph.prefill.cp_inactive",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.cp_inactive\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.cp_shape",
+      "kind": "decision_log",
+      "name": "graph.prefill.cp_shape",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.cp_shape\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.hidden_mode",
+      "kind": "decision_log",
+      "name": "graph.prefill.hidden_mode",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.hidden_mode\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.input_embeddings",
+      "kind": "decision_log",
+      "name": "graph.prefill.input_embeddings",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.input_embeddings\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.local_ineligible",
+      "kind": "decision_log",
+      "name": "graph.prefill.local_ineligible",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.local_ineligible\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.logprobs",
+      "kind": "decision_log",
+      "name": "graph.prefill.logprobs",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.logprobs\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.lora",
+      "kind": "decision_log",
+      "name": "graph.prefill.lora",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.lora\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.multimodal",
+      "kind": "decision_log",
+      "name": "graph.prefill.multimodal",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.multimodal\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.platform_prefix",
+      "kind": "decision_log",
+      "name": "graph.prefill.platform_prefix",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.platform_prefix\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.prefix_coverage",
+      "kind": "decision_log",
+      "name": "graph.prefill.prefix_coverage",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.prefix_coverage\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.replacement_embeddings",
+      "kind": "decision_log",
+      "name": "graph.prefill.replacement_embeddings",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.replacement_embeddings\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.graph.prefill.target_verify",
+      "kind": "decision_log",
+      "name": "graph.prefill.target_verify",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"graph.prefill.target_verify\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.chunk_slot",
+      "kind": "decision_log",
+      "name": "prefill.chunk_slot",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.chunk_slot\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.prefill.delayer",
+      "kind": "decision_log",
+      "name": "prefill.delayer",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"prefill.delayer\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.forward.target.split_prefill",
+      "kind": "decision_log",
+      "name": "forward.target.split_prefill",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"forward.target.split_prefill\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.forward.draft.prefill_graph",
+      "kind": "decision_log",
+      "name": "forward.draft.prefill_graph",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"forward.draft.prefill_graph\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "event.forward.draft.split_prefill",
+      "kind": "decision_log",
+      "name": "forward.draft.split_prefill",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "\"forward.draft.split_prefill\""
+      },
+      "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "numeric_fields": [
+        "batch_size"
+      ],
+      "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
+    },
+    {
+      "id": "config.attn_dp_size",
+      "name": "attn_dp_size",
+      "kind": "server_field",
+      "cli_candidate": "--attn-dp-size",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/parallel.py",
+        "anchor": "attn_dp_size:"
+      },
+      "declared_default": "1",
+      "review_status": "causal_mapping"
+    }
+  ],
+  "edges": [
+    {
+      "source": "config.chunked_prefill_size",
+      "target": "mechanism.prefill_tokens",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.max_prefill_tokens",
+      "target": "mechanism.prefill_tokens",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_dynamic_chunking",
+      "target": "mechanism.prefill_tokens",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "metric.prefill_effective_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "metric.num_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "metric.num_running_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "event.prefill.input_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "event.prefill.chunk_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "event.prefill.admitted",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "event.prefill.replay_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "event.prefill.chunk_alignment",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.max_running_requests",
+      "target": "mechanism.request_admission",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.prefill_max_requests",
+      "target": "mechanism.request_admission",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "metric.num_running_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "metric.num_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "metric.kv_available_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "event.prefill.request_slots",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "event.prefill.request_limit",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "event.decode.request_slots",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "event.decode.metadata_slots",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.schedule_conservativeness",
+      "target": "mechanism.future_growth",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_INIT_NEW_TOKEN_RATIO",
+      "target": "mechanism.future_growth",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR",
+      "target": "mechanism.future_growth",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS",
+      "target": "mechanism.future_growth",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.future_growth",
+      "target": "metric.new_token_ratio",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.future_growth",
+      "target": "metric.num_retracted_requests_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.future_growth",
+      "target": "metric.kv_available_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.future_growth",
+      "target": "event.prefill.memory_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.future_growth",
+      "target": "event.prefill.full_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.future_growth",
+      "target": "event.prefill.admitted",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.num_reserved_decode_tokens",
+      "target": "mechanism.decode_reservation",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.disaggregation_decode_extra_slots",
+      "target": "mechanism.decode_reservation",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.disaggregation_decode_host_receive_threshold",
+      "target": "mechanism.decode_reservation",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "metric.num_decode_prealloc_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "metric.num_decode_transfer_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "metric.pending_prealloc_token_usage",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "metric.num_decode_host_receive_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.decode.kv_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.decode.request_slots",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.decode.metadata_slots",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.decode.preallocated",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.decode.host_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.decode.mamba_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.decode.hisparse_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.disaggregation_decode_allocation_policy",
+      "target": "mechanism.readiness",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.optimistic_prefill_attempts",
+      "target": "mechanism.readiness",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.disaggregation_decode_polling_interval",
+      "target": "mechanism.readiness",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "metric.num_prefill_bootstrap_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "metric.num_prefill_inflight_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "metric.num_decode_prealloc_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "metric.kv_transfer_bootstrap_ms",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "metric.kv_transfer_alloc_ms",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "metric.num_prefill_retries_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "event.decode.handshake_pending",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "event.decode.preallocated",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "event.decode.kv_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.mem_fraction_static",
+      "target": "mechanism.kv_memory",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.max_total_tokens",
+      "target": "mechanism.kv_memory",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.kv_cache_dtype",
+      "target": "mechanism.kv_memory",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.page_size",
+      "target": "mechanism.kv_memory",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "metric.max_total_num_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "metric.kv_cache_memory_usage_gb",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "metric.weight_memory_usage_gb",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "metric.graph_memory_usage_gb",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "metric.kv_available_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "metric.kv_evictable_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "metric.kv_used_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "event.prefill.full_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "event.decode.kv_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.swa_full_tokens_ratio",
+      "target": "mechanism.hybrid_pools",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.max_mamba_cache_size",
+      "target": "mechanism.hybrid_pools",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.mamba_full_memory_ratio",
+      "target": "mechanism.hybrid_pools",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_unified_memory",
+      "target": "mechanism.hybrid_pools",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.swa_prefix_tails",
+      "target": "mechanism.hybrid_pools",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "metric.full_token_usage",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "metric.swa_token_usage",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "metric.mamba_usage",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "metric.swa_available_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "metric.mamba_available_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "metric.max_total_num_tokens_swa",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "event.prefill.full_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "event.prefill.swa_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "event.prefill.shared_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "event.prefill.swa_chunk_cap",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "event.decode.kv_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.disable_radix_cache",
+      "target": "mechanism.cache_reuse",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.radix_eviction_policy",
+      "target": "mechanism.cache_reuse",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.disaggregation_decode_enable_radix_cache",
+      "target": "mechanism.cache_reuse",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "metric.prefill_effective_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "metric.cache_hit_rate",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "metric.evicted_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "metric.load_back_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "event.prefill.admitted",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "event.decode.preallocated",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.enable_hierarchical_cache",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_ratio",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_size",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_host_memory_fraction",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_io_backend",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_mem_layout",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_write_policy",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_storage_backend",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_storage_prefetch_policy",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.hicache_host_used_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.hicache_host_total_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.load_back_duration_seconds",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.load_back_bytes_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.hicache_backup_bytes_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "metric.storage_prefetch_unfulfilled_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "event.prefill.prefetch_pending",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "event.prefill.staging_pending",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.tp_size",
+      "target": "mechanism.parallel_geometry",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.dp_size",
+      "target": "mechanism.parallel_geometry",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.ep_size",
+      "target": "mechanism.parallel_geometry",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.pp_size",
+      "target": "mechanism.parallel_geometry",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_dp_attention",
+      "target": "mechanism.parallel_geometry",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "metric.dp_attention_token_imbalance_ratio",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "metric.dp_attention_sync_wait_seconds",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "metric.dp_cooperation_realtime_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "metric.dp_attention_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "event.graph.prefill.dp_vote",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "event.graph.prefill.dp_inactive",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "event.prefill.admitted",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.cuda_graph_backend_prefill",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.cuda_graph_backend_decode",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.cuda_graph_max_bs_prefill",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.cuda_graph_max_bs_decode",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.cuda_graph_prefill_max_context",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.cuda_graph_max_seq_len_prefill",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.disable_prefill_cuda_graph",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.disable_decode_cuda_graph",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_torch_compile",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "metric.cuda_graph_passes_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "metric.is_cuda_graph",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "metric.graph_memory_usage_gb",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "metric.forward_execution_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.context_coverage",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.token_coverage",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.padding",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.request_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.metadata_capacity",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.dp_vote",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.dp_inactive",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.mixed_batch",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.attention_backend",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.forward.target.prefill_graph",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.forward.target.eager",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.forward.target.decode_runner",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.enable_encoder_swa_bounded_replay",
+      "target": "mechanism.replay",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_decoder_swa_bounded_replay",
+      "target": "mechanism.replay",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.replay",
+      "target": "metric.prefill_effective_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.replay",
+      "target": "metric.forward_execution_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.replay",
+      "target": "metric.max_total_num_tokens_swa",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.replay",
+      "target": "event.prefill.admitted",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.replay",
+      "target": "event.prefill.replay_budget",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.replay",
+      "target": "event.graph.prefill.context_coverage",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.moe_runner_backend",
+      "target": "mechanism.moe_backend",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.moe_a2a_backend",
+      "target": "mechanism.moe_backend",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
+      "target": "mechanism.moe_backend",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_FLASHINFER_MEGAMOE_MAX_TOKENS_PER_RANK",
+      "target": "mechanism.moe_backend",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.moe_backend",
+      "target": "metric.forward_execution_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.moe_backend",
+      "target": "metric.weight_memory_usage_gb",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.moe_backend",
+      "target": "metric.kv_cache_memory_usage_gb",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.enable_eplb",
+      "target": "mechanism.expert_balance",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.ep_num_redundant_experts",
+      "target": "mechanism.expert_balance",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.eplb_rebalance_num_iterations",
+      "target": "mechanism.expert_balance",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.expert_balance",
+      "target": "metric.eplb_balancedness",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.expert_balance",
+      "target": "metric.eplb_gpu_physical_count",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.expert_balance",
+      "target": "metric.forward_execution_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.speculative_algorithm",
+      "target": "mechanism.speculation",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.speculative_dspark_block_size",
+      "target": "mechanism.speculation",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_SIMULATE_ACC_LEN",
+      "target": "mechanism.speculation",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_SIMULATE_ACC_METHOD",
+      "target": "mechanism.speculation",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_SIMULATE_ACC_TOKEN_MODE",
+      "target": "mechanism.speculation",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "metric.spec_accept_length",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "metric.spec_accept_rate",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "metric.spec_cap_length",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "metric.spec_block_accept_length",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "metric.spec_num_draft_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "metric.realtime_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "event.forward.draft.eager",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "event.forward.draft.decode_runner",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.disable_overlap_schedule",
+      "target": "mechanism.overlap",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.scheduler_recv_interval",
+      "target": "mechanism.overlap",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_mixed_chunk",
+      "target": "mechanism.overlap",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.prefill_decode_interval",
+      "target": "mechanism.overlap",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.overlap",
+      "target": "metric.scheduler_stage_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.overlap",
+      "target": "metric.scheduler_process_cpu_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.overlap",
+      "target": "metric.scheduler_idle_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.overlap",
+      "target": "metric.forward_execution_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.overlap",
+      "target": "metric.fwd_occupancy",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.tokenizer_worker_num",
+      "target": "mechanism.frontend",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.stream_interval",
+      "target": "mechanism.frontend",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.max_queued_requests",
+      "target": "mechanism.frontend",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "metric.http_requests_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "metric.http_requests_active",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "metric.num_requests_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "metric.num_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "metric.time_to_first_token_seconds",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE",
+      "target": "mechanism.engram_numa",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT",
+      "target": "mechanism.engram_numa",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_NUMA_BIND_V2",
+      "target": "mechanism.engram_numa",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.engram_numa",
+      "target": "metric.weight_memory_usage_gb",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.engram_numa",
+      "target": "metric.max_total_num_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.engram_numa",
+      "target": "metric.forward_execution_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.engram_numa",
+      "target": "metric.hicache_host_used_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.disaggregation_transfer_backend",
+      "target": "mechanism.transport",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.disaggregation_ib_device",
+      "target": "mechanism.transport",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "metric.kv_transfer_speed_gb_s",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "metric.kv_transfer_latency_ms",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "metric.kv_transfer_total_mb",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "metric.num_decode_transfer_queue_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "metric.num_transfer_failed_reqs_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "metric.num_decode_deferred_kv_release_reqs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "event.decode.preallocated",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "event.decode.handshake_pending",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.enable_metrics",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_metrics_for_all_schedulers",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.decode_log_interval",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_forward_pass_metrics",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.tuning_observation_interval",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_ENABLE_METRICS_DEVICE_TIMER",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "metric.scheduler_stage_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "metric.forward_execution_seconds_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "metric.prefill_effective_tokens_total",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.routing",
+      "target": "metric.prefill_effective_tokens_total",
+      "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "mechanism.routing",
+      "target": "metric.num_queue_reqs",
+      "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "mechanism.prefill_tokens",
+      "relation": "interacts_with",
+      "explanation": "Declared chunk differs from effective per-rank chunk."
+    },
+    {
+      "source": "mechanism.parallel_geometry",
+      "target": "mechanism.graph_dispatch",
+      "relation": "interacts_with",
+      "explanation": "DP agreement and idle ranks affect replay."
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "mechanism.kv_memory",
+      "relation": "interacts_with",
+      "explanation": "Capture memory competes with KV."
+    },
+    {
+      "source": "mechanism.replay",
+      "target": "mechanism.prefill_tokens",
+      "relation": "interacts_with",
+      "explanation": "Replay rows consume compute budget."
+    },
+    {
+      "source": "mechanism.replay",
+      "target": "mechanism.moe_backend",
+      "relation": "interacts_with",
+      "explanation": "Replay can exceed workspace token cap."
+    },
+    {
+      "source": "mechanism.future_growth",
+      "target": "mechanism.kv_memory",
+      "relation": "interacts_with",
+      "explanation": "Predicted growth changes admission without allocating every predicted token."
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "mechanism.decode_reservation",
+      "relation": "interacts_with",
+      "explanation": "Readiness gates whether capacity may be reserved."
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "mechanism.engram_numa",
+      "relation": "interacts_with",
+      "explanation": "Both consume host DRAM."
+    },
+    {
+      "source": "mechanism.routing",
+      "target": "mechanism.cache_reuse",
+      "relation": "interacts_with",
+      "explanation": "Worker selection changes prefix reuse."
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "mechanism.parallel_geometry",
+      "relation": "interacts_with",
+      "explanation": "Frontend starvation can look like poor GPU scaling."
+    },
+    {
+      "source": "mechanism.speculation",
+      "target": "mechanism.graph_dispatch",
+      "relation": "interacts_with",
+      "explanation": "Verify width affects eligible graphs."
+    },
+    {
+      "source": "mechanism.expert_balance",
+      "target": "mechanism.moe_backend",
+      "relation": "interacts_with",
+      "explanation": "Expert skew changes kernel critical path."
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.cp_bucket",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.cp_inactive",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.cp_shape",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.hidden_mode",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.input_embeddings",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.local_ineligible",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.logprobs",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.lora",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.multimodal",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.platform_prefix",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.prefix_coverage",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.replacement_embeddings",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.graph.prefill.target_verify",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "event.prefill.chunk_slot",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "event.prefill.delayer",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.forward.target.split_prefill",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.forward.draft.prefill_graph",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.forward.draft.split_prefill",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.attn_dp_size",
+      "target": "mechanism.parallel_geometry",
+      "relation": "controls_or_constrains"
+    }
+  ]
+}
