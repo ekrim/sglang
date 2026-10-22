@@ -162,15 +162,17 @@
       "alternatives": [
         "Concurrent snapshot persistence/checksum or loader reads repopulate file cache.",
         "NUMA-local contiguous memory or process affinity differs.",
-        "The workload may not expose host lookups enough for coverage to matter."
+        "The workload may not expose host lookups enough for coverage to matter.",
+        "New-node backing skew persists even with staging complete: allocator fragmentation or loader-local pressure remains possible; staging concurrency is not a sufficient explanation."
       ],
       "check": "Read per-layer/rank coverage, /proc scheduler affinity and NUMA placement, host/cgroup headroom and staging completion. Correlate with matched-rank forward latency before attribution.",
-      "action": "First start a fresh deployment after staging/checksum I/O completes, holding server configuration fixed. Change binding/layout only if placement evidence supports a separate controlled trial.",
+      "action": "Verify staging completion, actual backing and placement. A fresh deployment after staging is a possible controlled test, not a guarantee of uniform huge pages. Record persistent skew as an attribution limitation; choose a separate fixed-config placement/backing experiment when runtime evidence supports it. Do not infer measured slowdown from the startup warning.",
       "expected": "If temporary staging pressure caused the backing skew, coverage may improve without a serving-config change.",
       "reject_if": "Coverage stays skewed or improves without a latency benefit; do not claim a scheduler bottleneck or host-lookup speedup from the receipt alone.",
       "status": "Startup backing skew observed; causal performance effect unverified",
       "runtime_evidence": [
-        "native-r0 server.log at2026-10-22T17:28:33Z..17:28:35Z: layer14 rank2=30%, rank3=32%, ranks0/1=100%; immutable snapshot persistence still active."
+        "native-r0 server.log at2026-10-22T17:28:33Z..17:28:35Z: layer14 rank2=30%, rank3=32%, ranks0/1=100%; immutable snapshot persistence still active.",
+        "cadence18-hour-r5 startup onlyris0032 at2026-10-22T22:07:16Z..22:07:17Z: layer1 rank0/1/2/3=76/70/83/85%, layer14=11/0/95/83%, collapseerrno12. Image/model hashing and staging completed before launch. Contrast priorfullruns rounded100%; startup receipt alone doesnotmeasure lookup slowdown. See campaign evidence/cadence18-hour-r5-startup-backing.json."
       ]
     },
     {

@@ -2361,11 +2361,12 @@
         "DSv4.1 host Engram; NUMA topology and huge-page availability matter."
       ],
       "confounders": [
-        "Table sharing scope per worker vs node; CPU binding actually applied; huge pages; host cache size; collective width."
+        "Table sharing scope per worker vs node; CPU binding actually applied; huge pages; host cache size; collective width.",
+        "New-node startup can retain strongly uneven huge-page coverage after staging/checksum completion (cadence18-hour-r5); absence of concurrent staging does not establish matched memory backing."
       ],
       "hypothesis": "More HBM may improve concurrency, but host access can worsen TPOT; increasing host cache can cause host OOM.",
       "next_test": "Record actual CPU affinity, per-node page placement, per-layer huge-page coverage and host budget before workload. Keep staging/checksum I/O outside comparison windows; compare fixed shapes and cache state before changing layout or binding.",
-      "remaining_gap": "Existing per-layer startup logs report layout, resident MiB, huge-page MiB and collapse errors. They do not measure exposed lookup time or prove effective CPU/NUMA placement; collect OS placement and competing file-I/O evidence.",
+      "remaining_gap": "Existing per-layer startup logs report layout, resident MiB, huge-page MiB and collapse errors. They do not measure exposed lookup time or prove effective CPU/NUMA placement; collect OS placement and competing file-I/O evidence. Startup is a one-time receipt; it does not establish backing stability throughout the replay. Aggregate process smaps cannot identify each table without mapping identity.",
       "evidence": "code-audited; causal performance effect requires paired experiment"
     },
     {
