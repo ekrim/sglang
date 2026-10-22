@@ -2852,6 +2852,42 @@
       },
       "declared_default": "1",
       "review_status": "causal_mapping"
+    },
+    {
+      "id": "mechanism.prefill_decode_cadence",
+      "kind": "mechanism",
+      "title": "Explicit decode interval defers prefill before budget checks",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler.py",
+        "anchor": "def _should_defer_prefill"
+      },
+      "behavior": "After an extend batch, the configured interval is armed. Each subsequent scheduling encounter decrements it and skips prefill admission while it remains active. Under attention DP the extend flag is synchronized across ranks.",
+      "conditions": [
+        "Normal scheduler path; DLLM branch bypasses this gate. Event requires tuning_observation_interval > 0."
+      ],
+      "confounders": [
+        "A deferral can occur without waiting work; continuing chunks are separate from waiting_queue. Other ranks can arm the shared cadence. Gate encounters are not completed decode forwards or elapsed wait. Downstream capacity checks are not reached in deferred passes."
+      ],
+      "hypothesis": "With queued or continuing prefill work, a long decode interval can reduce prefill service even with free KV and no token-budget encounter. Reducing it may increase logical throughput while worsening decode ITL.",
+      "next_test": "At fixed concurrency, topology, cache warmup and budgets, compare interval24 versus a lower value only after sustained queued-work deferrals are observed. Compare prefill service, total/output throughput, TTFT and p10 decode speed; reverse the change if the workload tradeoff is unfavorable.",
+      "remaining_gap": "No exposed wall-time or oldest eligible request age is attributed to this gate. Queue presence does not prove all queued requests are otherwise eligible.",
+      "evidence": "Source-audited during GB200 Phase3 baseline setup; production-method enabled/disabled CPU behavior tested. Runtime causal benefit unmeasured."
+    },
+    {
+      "id": "log.prefill.decode_interval",
+      "kind": "decision_log",
+      "name": "prefill.decode_interval",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler.py",
+        "anchor": "\"prefill.decode_interval\""
+      },
+      "numeric_fields": [
+        "chunk_pending",
+        "remaining_interval",
+        "waiting_requests"
+      ],
+      "availability": "tuning_observation_interval > 0; event-driven window",
+      "interpretation": "One true interval-gate return, remaining value after decrement. waiting_requests is local queue length and chunk_pending is 0/1. Repeated encounters are not unique requests or blocked time."
     }
   ],
   "edges": [
@@ -4156,6 +4192,31 @@
       "source": "config.attn_dp_size",
       "target": "mechanism.parallel_geometry",
       "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.prefill_decode_interval",
+      "target": "mechanism.prefill_decode_cadence",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.prefill_decode_cadence",
+      "target": "log.prefill.decode_interval",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_decode_cadence",
+      "target": "mechanism.prefill_tokens",
+      "relation": "interacts_with"
+    },
+    {
+      "source": "mechanism.prefill_decode_cadence",
+      "target": "mechanism.parallel_geometry",
+      "relation": "interacts_with"
+    },
+    {
+      "source": "mechanism.prefill_decode_cadence",
+      "target": "metric.num_queue_reqs",
+      "relation": "indirectly_observed_by"
     }
   ]
 }

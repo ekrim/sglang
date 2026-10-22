@@ -1383,6 +1383,13 @@ class Scheduler(
             return False
 
         self._prefill_decode_interval_remaining -= 1
+        if tuning_recorder.enabled:
+            tuning_recorder.observe(
+                "prefill.decode_interval",
+                remaining_interval=self._prefill_decode_interval_remaining,
+                waiting_requests=len(self.waiting_queue),
+                chunk_pending=int(self.chunked_req is not None),
+            )
         return True
 
     def _arm_prefill_decode_interval(self, batch: Optional[ScheduleBatch]) -> None:

@@ -62,6 +62,7 @@ No request IDs, prompts, token sequences, addresses or tensor values are logged.
 
 | Family | Unit / population | Meaning and limits |
 | --- | --- | --- |
+| `prefill.decode_interval` | Scheduling gate encounters | Explicit interval defers prefill before admission checks; queue/continuing-chunk fields distinguish idle from pending-work encounters. Not blocked wall time or completed decode steps. |
 | `prefill.request_slots`, `request_limit` | Gate encounters | Physical/logical request admission versus explicit per-prefill count cap. Same queued request may encounter the gate many times. A preemption attempt can still follow a slot observation. |
 | `prefill.input_budget`, `chunk_budget`, `replay_budget` | Budget-check encounters | Compute budget exhausted. Replay consumes chunk space; this is independent of free KV tokens. Budget checks also run after admitting a request, so these are not necessarily rejected candidates. |
 | `prefill.full_capacity`, `swa_capacity`, `shared_capacity` | Allocator checks | Requested reservation did not fit that budget model. `memory_budget` is a higher-level wrapper observation and can accompany one of these: **do not sum them as separate failures**. Shared-pool failure cannot be assigned to one physical pool from scalar token counts alone. |
@@ -123,3 +124,7 @@ Local validation covers recorder contracts and selected production branches usin
 5. Spend Rubin time only after those checks. Use a short representative steady window to reject hypotheses and select one configuration change. Cache warmup and long returning contexts must be representative; a cold one-minute run cannot rank AgentX Pareto points.
 6. Use paired A/B windows, then full-duration qualified runs for surviving candidates. Check correctness, output throughput, logical throughput, interactivity and TTFT/ITL. Never promote an unqualified microbenchmark or synthetic-acceptance shortcut to a serving gain.
 7. If observations cannot distinguish alternatives, record the missing causal edge and add/validate a signal before starting another wide sweep. Preserve negative results and unresolved cases.
+
+## Phase 3 explanation companion
+
+See `explanation_model.json` for observation -> competing diagnoses -> discriminating checks -> config intervention rules. Evidence status is explicit; source-backed hypotheses are not measured throughput wins. The GB200 starting recipe uses an explicit prefill/decode interval, now mapped separately from the prefill delayer and token-budget gates.

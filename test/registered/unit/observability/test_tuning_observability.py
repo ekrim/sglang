@@ -334,6 +334,35 @@ class DispatchContractTest(unittest.TestCase):
         self.assertTrue(all(v == 1 for v in r.counts.values()))
 
 
+class DecodeIntervalTest(unittest.TestCase):
+    def test_interval_decisions_unchanged_with_observation(self):
+        for enabled in (False, True):
+            r = tuning.TuningRecorder(1000 if enabled else 0)
+            ns = production(
+                "managers/scheduler.py", {"_should_defer_prefill"},
+                dict(tuning_recorder=r), owner="Scheduler",
+            )
+            state = NS(_prefill_decode_interval_remaining=2,
+                       waiting_queue=[object(), object()], chunked_req=object())
+            actual = [ns["_should_defer_prefill"](state) for _ in range(4)]
+            self.assertEqual(actual, [True, True, False, False])
+            self.assertEqual(state._prefill_decode_interval_remaining, 0)
+            self.assertEqual(dict(r.counts), {"prefill.decode_interval": 2} if enabled else {})
+            if enabled:
+                self.assertEqual(r.samples[("prefill.decode_interval", "remaining_interval")]["sum"], 1)
+                self.assertEqual(r.samples[("prefill.decode_interval", "waiting_requests")]["last"], 2)
+                self.assertEqual(r.samples[("prefill.decode_interval", "chunk_pending")]["last"], 1)
+
+    def test_idle_deferral_is_not_reported_as_queued_work(self):
+        r = tuning.TuningRecorder(1000)
+        ns = production("managers/scheduler.py", {"_should_defer_prefill"},
+                        dict(tuning_recorder=r), owner="Scheduler")
+        state = NS(_prefill_decode_interval_remaining=1, waiting_queue=[], chunked_req=None)
+        self.assertTrue(ns["_should_defer_prefill"](state))
+        for name in ("waiting_requests", "chunk_pending", "remaining_interval"):
+            self.assertEqual(r.samples[("prefill.decode_interval", name)]["last"], 0)
+
+
 class ConfigGraphTest(unittest.TestCase):
     def test_sources_contracts_and_inventory(self):
         tools = load_file(

@@ -137,6 +137,7 @@ EVENTS = {
     "prefill.prefetch_pending": set(),
     "prefill.staging_pending": set(),
     "prefill.delayer": set(),
+    "prefill.decode_interval": {"remaining_interval", "waiting_requests", "chunk_pending"},
     "prefill.admitted": {
         "extend_tokens",
         "replay_tokens",

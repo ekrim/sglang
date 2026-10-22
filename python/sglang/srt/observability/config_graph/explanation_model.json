@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "source_base": "4b00b1ac474baa34bb4500d1621cdf4122d2f9c3",
+  "rules": [
+    {
+      "id": "explicit-prefill-cadence",
+      "graph_nodes": [
+        "config.prefill_decode_interval",
+        "mechanism.prefill_decode_cadence",
+        "log.prefill.decode_interval"
+      ],
+      "observation": "Repeated prefill.decode_interval with waiting_requests>0 or chunk_pending=1, while per-rank prefill service is insufficient.",
+      "diagnosis": "The configured decode interval explicitly prevents the admission scan. Free KV or absent budget-gate events do not rule this out.",
+      "alternatives": [
+        "Queued requests may also be ineligible for cache transfer or capacity.",
+        "Another DP rank can arm the interval; local queue pressure may differ."
+      ],
+      "check": "Correlate rank-local gate windows with queue slope, prefill effective-token rates, decode output rate and resolved cadence. Event counts do not measure wait time.",
+      "action": "Test interval24 ->12 at fixed topology, concurrency, token/request caps and cache warmup.",
+      "expected": "Fewer consecutive deferrals and higher prefill service; decode ITL may worsen.",
+      "reject_if": "Output throughput or p10 user speed regresses without a useful Pareto tradeoff; gate evidence does not clear.",
+      "status": "CPU behavior verified; GPU effect pending",
+      "runtime_evidence": []
+    },
+    {
+      "id": "prefill-compute-budget",
+      "graph_nodes": [
+        "config.chunked_prefill_size",
+        "mechanism.prefill_tokens"
+      ],
+      "observation": "Queued work with input/chunk budget encounters and available KV; explicit interval and request caps are not the dominant obstruction.",
+      "diagnosis": "The admission compute budget limits prefill batch formation.",
+      "alternatives": [
+        "Replay rows consume the same budget.",
+        "DP divides declared chunk size.",
+        "Post-admission checks are not rejected requests."
+      ],
+      "check": "Read tuning_scheduler_config per rank and admitted extend/replay rows; separate input budget from chunk budget and workspace limits.",
+      "action": "Change only the binding effective token cap within verified workspace limits; keep the other cap fixed.",
+      "expected": "Larger useful admitted batches and increased prefill service, potentially worse TTFT/ITL.",
+      "reject_if": "Service does not improve, memory guard trips, or long-context coverage/errors worsen.",
+      "status": "Source-backed hypothesis; runtime pending",
+      "runtime_evidence": []
+    },
+    {
+      "id": "request-row-cap",
+      "graph_nodes": [
+        "config.max_running_requests",
+        "mechanism.request_admission"
+      ],
+      "observation": "Request-slot encounters and a growing queue while device capacity remains available.",
+      "diagnosis": "Request rows may constrain admission before KV capacity is exhausted.",
+      "alternatives": [
+        "An earlier gate can hide a later memory limit.",
+        "Increasing active rows can exceed decode graph capture coverage."
+      ],
+      "check": "Compare resolved per-rank row limit with running requests and graph-use metrics; inspect FULL/SWA separately.",
+      "action": "Raise only the binding per-rank admission cap in a bounded trial; account for graph and request-pool memory.",
+      "expected": "More active work, if another gate does not replace this one.",
+      "reject_if": "KV gates/retractions immediately replace the row gate or latency worsens without useful throughput.",
+      "status": "Source-backed hypothesis; runtime pending",
+      "runtime_evidence": []
+    },
+    {
+      "id": "device-capacity",
+      "graph_nodes": [
+        "mechanism.kv_memory",
+        "mechanism.hybrid_pools",
+        "config.mem_fraction_static"
+      ],
+      "observation": "FULL/SWA/shared-capacity failures during queued work, or retractions under sustained load.",
+      "diagnosis": "The effective device-pool geometry or reservations cannot fit the workload.",
+      "alternatives": [
+        "Locked prefixes and future output reservation differ from physical usage.",
+        "Graph buffers, draft state and replay tails consume memory.",
+        "Wrapper memory_budget can duplicate a lower-level gate."
+      ],
+      "check": "Compare startup actual capacities, per-pool evictable/available tokens and reservation observations. Do not add wrapper and allocator events.",
+      "action": "Choose one evidenced intervention: modest static-memory increase if proven headroom, or lower active-request/reservation pressure; never infer memory from the flag alone.",
+      "expected": "Capacity gate clears without OOM/retraction or excessive recomputation.",
+      "reject_if": "Measured capacity does not change or another physical pool still binds.",
+      "status": "Source-backed hypothesis; runtime pending",
+      "runtime_evidence": []
+    },
+    {
+      "id": "decode-graph-coverage",
+      "graph_nodes": [
+        "mechanism.graph_dispatch",
+        "metric.cuda_graph_passes_total"
+      ],
+      "observation": "Eager dispatch grows under high active batch sizes despite a configured decode graph runner.",
+      "diagnosis": "Decode/verify graph coverage may be insufficient, but the eager counter also includes prefill and idle paths.",
+      "alternatives": [
+        "Prefill is deliberately eager in the baseline.",
+        "Target versus draft and graph eligibility predicates differ.",
+        "A runner receipt does not prove every layer replayed."
+      ],
+      "check": "Use existing CUDA graph counters with producer-defined labels and actual phase context; obtain mode-specific dispatch evidence before attributing eager events to decode.",
+      "action": "Only after confirming uncovered decode/verify sizes, test a larger capture cap with the actual KV-memory cost recorded.",
+      "expected": "Increased relevant graph use and lower exposed host overhead.",
+      "reject_if": "Extra captures shrink KV enough to harm reuse or relevant graph use does not rise.",
+      "status": "Ambiguous signal: do not auto-change from aggregate eager counts",
+      "runtime_evidence": []
+    },
+    {
+      "id": "routing-or-supply",
+      "graph_nodes": [
+        "mechanism.routing",
+        "mechanism.frontend",
+        "mechanism.parallel_geometry"
+      ],
+      "observation": "Uneven per-rank queue and cache reuse, or idle serving capacity with few arrivals despite active client work.",
+      "diagnosis": "Router affinity, CPU request handling or client supply may limit useful GPU work.",
+      "alternatives": [
+        "Workload trace lengths differ by lane.",
+        "Queue depletion can be caused by a slow upstream stage.",
+        "Router prefix approximation differs from server radix-cache state."
+      ],
+      "check": "Inspect the deployed router implementation, routing headers, client offered load, HTTP activity, per-rank arrivals and tier hit rates.",
+      "action": "Correct missing baseline session routing first. Tune frontend workers or routing only after distinguishing supply starvation from affinity overload.",
+      "expected": "More balanced useful arrivals without destroying cache locality.",
+      "reject_if": "GPU batches merely reshuffle while cache misses or end-to-end latency rise.",
+      "status": "Source-backed hypothesis; runtime pending",
+      "runtime_evidence": []
+    }
+  ],
+  "policy": {
+    "units": "Keep rank/process labels; encounter counts are not unique requests, wait seconds or fallback percentages.",
+    "window": "Require repeated consistent live windows and workload-phase context; cold/warmup observations cannot certify Pareto throughput.",
+    "early_stop": "Safety/invalidity stops immediately; clear sustained diagnostic evidence can stop a screen, whose partial throughput stays exploratory.",
+    "promotion": "Paired equal-duration screens with full corpus/canonical warmup, then full-duration validity, latency and refreshed frontier checks.",
+    "unknown": "Missing producers/events are unknown, not zero; add discriminating instrumentation when alternatives remain."
+  }
+}
