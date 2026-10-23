@@ -1,6 +1,6 @@
 # Bounded scheduling-policy diagnostics
 
-Status: implemented, default off, with CPU behavior contracts passing. Initial all-rank R8 warmup emission is verified; full replay validation and overhead measurement remain pending. No new event here is present in R6/R7. This refines campaign gap G003 and the `prefill-ordering-and-aged-queues` decision rule. Do not infer current behavior from a proposed field.
+Status: implemented, default off, with CPU behavior contracts passing. Initial all-rank R8 warmup emission is verified. R8 was interrupted before profiling and has no score; unchanged R8b retries under durable Slurm ownership. Full replay validation and overhead measurement remain pending. No new event here is present in R6/R7. This refines campaign gap G003 and the `prefill-ordering-and-aged-queues` decision rule. Do not infer current behavior from a proposed field.
 
 The question is whether old requests are repeatedly bypassed by ordering, held by admission readiness, or progressing through long continuation work. Current first-forward histograms omit requests that are still waiting and later continuation/retraction waits. Gate encounter counts do not measure exposed wait.
 
