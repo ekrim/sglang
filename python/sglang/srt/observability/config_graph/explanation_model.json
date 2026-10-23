@@ -55,7 +55,7 @@
       "action": "If complete-run evidence supports increasing prefill work, change a coherent effective chunk budget with only its required input/workspace prerequisites. Record any coupled flags explicitly as one budget intervention; do not treat an input-to-chunk event-name change as added capacity.",
       "expected": "Larger useful admitted batches and increased prefill service, potentially worse TTFT/ITL.",
       "reject_if": "Service does not improve, memory guard trips, or long-context coverage/errors worsen.",
-      "status": "R6 full-hour trial running; first two quarters support higher prefill service, canonical result pending",
+      "status": "R6 full-hour trial running; first three quarters support higher prefill/decode service, canonical result pending",
       "runtime_evidence": [
         "GB200 cadence18-hour-r5b window13 (18\u201319.5min): per-rank prefill.admitted input_remaining and chunk_remaining aggregates match, minima0; extend max16384 and replay sum0. This is a bounded window, not a full-run score or proof that raising the budget helps.",
         "Full interval18 replay retains queued work and matching exhausted16384 input/chunk residuals. Installed DeepGEMM size API queried after serving exit estimates20480 versus16384 adds1.916\u20132.040GiB across target/draft buffer cases. These are source-derived possible keys, not actual allocation receipts or total peak headroom. Next trial couples chunk81920global/input20480/MegaMoEcap20480, with other server/load controls fixed.",
@@ -63,7 +63,8 @@
         "R6 scheduler receipts resolve chunk/input20480 and maxrunning96 on all ranks, but max_total_num_tokens falls from17661184 to17545472 (-0.6552%) at unchanged mem_fraction_static. Preserve measured capacity; workspace/activation sizing and new-node state are possible contributors, not an isolated cause.",
         "A separate optional tuning_moe_buffer receipt is implemented for future deployment, CPU-tested only. It reads aligned cap and exposed buffer.nbytes on each SGLang cache miss, with cache-hit silence and no group addresses. No R6 buffer-creation receipt exists; GPU validation remains pending.",
         "R6 first15min (10 windows/~800s scrape spans) versus qualified R5b: computedprefill22489.63 vs20324.22/rank (+10.65%), decode2862.22 vs2774.23 (+3.17%), meanqueue15.58 vs19.85 (-21.52%), active31.46 vs28.11 (+11.91%), graphsteps26.99 vs28.82 (-6.34%). Host-hit work+30.35%, and initial cache state differs. Early scheduling evidence only; full replay and final score pending.",
-        "R6 15\u201330min (10 windows/~800s scrape spans) versus qualified R5b: computed prefill25312.25 vs22178.02/rank (+14.13%), decode3138.82 vs3062.96 (+2.48%), meanqueue18.66 vs27.88 (-33.06%), active38.83 vs34.69 (+11.93%), graphsteps22.59 vs24.73 (-8.68%). Host-hit work+44.75%; device-hit+0.67%. First-forward mean wait3.671 vs6.737s, with38 vs71 admissions above300s and22 vs47 above600s. Outstanding/continuation waits are excluded. Service gains persist after near-full logical host retention, but request/cache mix, node/backing and resolved-capacity differences remain; no full-score ranking or next intervention selected."
+        "R6 15\u201330min (10 windows/~800s scrape spans) versus qualified R5b: computed prefill25312.25 vs22178.02/rank (+14.13%), decode3138.82 vs3062.96 (+2.48%), meanqueue18.66 vs27.88 (-33.06%), active38.83 vs34.69 (+11.93%), graphsteps22.59 vs24.73 (-8.68%). Host-hit work+44.75%; device-hit+0.67%. First-forward mean wait3.671 vs6.737s, with38 vs71 admissions above300s and22 vs47 above600s. Outstanding/continuation waits are excluded. Service gains persist after near-full logical host retention, but request/cache mix, node/backing and resolved-capacity differences remain; no full-score ranking or next intervention selected.",
+        "R6 30\u201345min (10 windows/~800s scrape spans) versus R5b: computed prefill24714.85 vs21465.13/rank (+15.14%), decode2937.24 vs2825.00 (+3.97%), meanqueue19.52 vs22.85 (-14.55%), active37.39 vs32.81 (+13.98%), graphsteps22.03 vs24.03 (-8.30%). Host-hit work+34.56%, device-hit-0.07%. Service gains persist, but first-forward mean wait5.464 vs5.154s and above600s admissions25 vs23; second-quarter wait improvement did not persist. No full-score ranking."
       ]
     },
     {
@@ -82,7 +83,7 @@
       "action": "Raise only the binding per-rank admission cap in a bounded trial; account for graph and request-pool memory.",
       "expected": "More active work, if another gate does not replace this one.",
       "reject_if": "KV gates/retractions immediately replace the row gate or latency worsens without useful throughput.",
-      "status": "No row-cap case established in fullC256baseline; leave server cap unchanged",
+      "status": "No row-cap case established in retained full baseline/reference or first45min of R6; sampled R6 active maximum56/rank versus96 cap, with earlier-gate masking caveat",
       "runtime_evidence": [
         "Fullbaseline sampledmax40running/rank versusresolved96cap; no request-row gate in retained emission windows. Increasing max_running_requests is not supported by these observations."
       ]
@@ -341,7 +342,7 @@
       "action": "For reproduction, explicitly select the backend the prior run actually constructed, then verify allrank construction receipts. A native-backend experiment is a separate intervention requiring compatibility/correctness validation.",
       "expected": "Matched constructed class and successful initialization; no throughput gain is inferred from backend naming.",
       "reject_if": "Resolved backend still differs, construction fails, or compatibility tests fail; never substitute an arbitrary binary just to bypass startup.",
-      "status": "Python cache construction verified on all four R5b ranks; performance outcome pending.",
+      "status": "Python cache construction verified on all four R5b/R6 ranks; R5b full result qualified, R6 pending; no isolated backend-speed claim",
       "runtime_evidence": [
         "Fullbaseline-hour-r3 andload384-hour-r4 logs showPythonUnifiedTreeCore onall4ranks after cargoqueryfailure. R5 sourcehashesmatch but compiler1.92.0 queries succeed, imagebuildmode never and overlaybinding absent; startupfails at22:10:18UTC. evidence/cadence18-hour-r5-runtime-backend.json preservescorrectworkspace query.",
         "cadence18-hour-r5b at2026-10-22T22:16:04Z: all4 ranks logged Tree Core: UnifiedTreeCore. Explicit Python selection reproduces the actual prior implementation without copying/building a Rust binary. Startup receipt: campaign evidence/cadence18-hour-r5b-startup-check.json."
@@ -371,7 +372,8 @@
       "runtime_evidence": [
         "First30min retained windows (~1600s counter coverage): C256 interval24 has16166 first-forward observations and3 waits>300s; C384 interval24 has19419 and59; C384 interval18 has19699 and84. These are observation-time cohorts, not matched requests or full1800s totals. C384 interval24 is unqualified after finalization loss.",
         "Final C384 interval18 TTFTp99 is58.508s, maximum2561.266s;128drain cancellations remain separately accounted. Queue-age observations establish delayed admission but do not isolate ordering from budget/readiness. The next selected test addresses compute budget; an aging-policy experiment remains an alternative.",
-        "R6 first15min has9945 first-forward observations, meanwait2.7108s and16 waits>300s; R5b has9639,2.5577s and13>300s. These admission-time cohorts omit still-waiting and continuation work. Lower mean queue does not alone establish improved tail latency or policy quality."
+        "R6 first15min has9945 first-forward observations, meanwait2.7108s and16 waits>300s; R5b has9639,2.5577s and13>300s. These admission-time cohorts omit still-waiting and continuation work. Lower mean queue does not alone establish improved tail latency or policy quality.",
+        "R6 15\u201330min admission meanwait3.671 vsR5b6.737s improved, but30\u201345min reverses to5.464 vs5.154s despite14.55% lower mean queue and15.14% higher computed prefill. Above600/1200s admissions25/13 vs23/11. This is a counterexample to inferring tail quality from queue depth or one quarter; different cohorts and still-waiting/continuation work prevent isolated policy attribution. Keep the current policy fixed until full replay and final accounting."
       ]
     },
     {
