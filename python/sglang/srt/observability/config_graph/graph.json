@@ -1269,8 +1269,8 @@
         "path": "python/sglang/srt/observability/metrics_collector.py",
         "anchor": "sglang:hicache_host_total_tokens"
       },
-      "availability": "existing; enable_metrics plus producer-specific gates; see README",
-      "interpretation": "Scheduler reports token_to_kv_pool_host or full_kv_pool_host logical_size/available_size, not aggregate host bytes or every hybrid component. DeepSeekV4 uses LogicalHostPool FULL page anchors with no KV tensor; compressed/SWA side pools hold physical data.100% logical-anchor occupancy does not establish100% physical RAM or every host component full."
+      "availability": "Requires metrics and hierarchical-cache enablement. Stats start at zero; prefill/decode reporting populates logical host capacity through metrics_reporter._log_hicache_stats. A labeled initial zero before a populated report is not evidence of disabled or zero-capacity HiCache.",
+      "interpretation": "Scheduler reports token_to_kv_pool_host or full_kv_pool_host logical_size/available_size, not aggregate host bytes or every hybrid component. DeepSeekV4 uses LogicalHostPool FULL page anchors with no KV tensor; compressed/SWA side pools hold physical data.100% logical-anchor occupancy does not establish100% physical RAM or every host component full. R11 first fully labeled scrape reported zero on all ranks, followed10.000s later by36,150,784 logical slots/rank. Require producer progress and all-rank positive capacities before comparing startup sizes; do not silently fill initialization zeros with inferred values."
     },
     {
       "id": "metric.load_back_duration_seconds",
@@ -3500,7 +3500,7 @@
       "hypothesis": "Lowering admitted-row capacity may improve graph coverage and change KV retention simultaneously. A throughput change cannot be assigned exclusively to scheduling or graph speed.",
       "next_test": "Preserve all-rank resolved row limits, DSV4 sizing receipts, actual FULL/SWA and host capacities, backing and graph-mode service. Compare the full replay and its regimes; do not normalize away a real capacity consequence or claim isolated attribution.",
       "remaining_gap": "The startup sizing receipt does not measure all allocations, transient headroom, host prefix loss or the independent throughput contribution of each coupled mechanism.",
-      "evidence": "R10 to R11 startup on the same four GB200s: declared cap384 to256 gives actual96 to64 rows/rank; available budget remains logged50.35GB, fixed SWA26.06 to25.32GB and actual FULL capacity17,545,472 to18,075,392 tokens/rank (+3.0203%). All-rank receipts verified; R11 performance is pending. Values labeled GB in this log are rounded GiB by the source division."
+      "evidence": "R10 to R11 startup on the same four GB200s: declared cap384 to256 gives actual96 to64 rows/rank; available budget remains logged50.35GB, fixed SWA26.06 to25.32GB and actual FULL capacity17,545,472 to18,075,392 tokens/rank (+3.0203%). All-rank receipts verified; R11 performance is pending. Values labeled GB in this log are rounded GiB by the source division. Subsequent all-rank positive gauges verify host FULL slots35,090,944 to36,150,784 at ratio2. Initial R11 host-capacity gauges were zero before their first populated report."
     },
     {
       "id": "log.dsv4_memory_calculation",

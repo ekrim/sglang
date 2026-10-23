@@ -3,7 +3,7 @@
 Use this graph to connect a tuning hypothesis to an observable decision before spending GPU time on a full benchmark. It describes SGLang at base `f91b81b82ac7701b16fff92f9e2a24e840475b37` plus the instrumentation in this branch. It is a **prioritized causal audit**, not a claim that every serving option is covered or that a log uniquely identifies the best configuration.
 
 - `graph.json`: typed config, mechanism, metric and decision-log nodes, with source anchors, conditions, confounders, proposed experiments and remaining gaps.
-- `inventory.json`: all 537 declarative `A[...]` fields found in the checked-out argument definitions. 73 have causal mappings; the rest explicitly say `not_causally_audited`. CLI spellings here are candidates, not a replacement for the parser; aliases, `no_cli`, model defaults and launcher overrides matter. Environment variables and external launcher/router knobs are not exhaustively inventoried.
+- `inventory.json`: all 537 declarative `A[...]` fields found in the checked-out argument definitions. 76 have causal mappings; the rest explicitly say `not_causally_audited`. CLI spellings here are candidates, not a replacement for the parser; aliases, `no_cli`, model defaults and launcher overrides matter. Environment variables and external launcher/router knobs are not exhaustively inventoried.
 - `schema.json`: versioned JSON Schema for the graph.
 - `tools.py`: dependency-free source/edge/event-contract/inventory validator and config lookup. Run with Python 3.10+ from any directory.
 
@@ -46,7 +46,7 @@ The new interval defaults to **0 (disabled)**. It produces INFO logs independent
 
 Optionally enable the existing device timer with `SGLANG_ENABLE_METRICS_DEVICE_TIMER=1` for forward timing and sampled scheduler/forward overlap. Measure timer overhead separately from the new instrumentation. `--enable-forward-pass-metrics` exposes the existing IPC feed to an external consumer; it is not automatically a Prometheus scrape.
 
-Three new record prefixes:
+Core observation records:
 
 | Record | Meaning |
 | --- | --- |
@@ -156,7 +156,7 @@ Scheduling order is mapped separately from capacity and cadence. `schedule_polic
 
 ## Optional allocator endpoint snapshot
 
-For a later validated deployment, set `SGLANG_TUNING_CUDA_ALLOCATOR_STATS=1` with a positive tuning observation interval. It is disabled by default and has not been deployed in the Phase 3 R6 experiment. CPU contracts and an isolated pinned-image GPU0 native-allocator/recorder check pass. All-rank serving integration and disabled/enabled serving overhead remain to be checked. Neither memory diagnostic is in the R6/R7 serving overlay.
+To enable the optional snapshot, set `SGLANG_TUNING_CUDA_ALLOCATOR_STATS=1` with a positive tuning observation interval. It is disabled by default and has not been deployed in the Phase 3 R6 experiment. CPU contracts and an isolated pinned-image GPU0 native-allocator/recorder check pass. All-rank endpoint/buffer emission is verified in full R8b, R9 and R10; disabled/enabled serving overhead remains unisolated. Neither memory diagnostic is in the older R6/R7 serving overlays.
 
 Each nonempty `tuning_observation` flush then adds `allocator_snapshot`. The native PyTorch backend reports current allocated, reserved, active and inactive-split bytes, plus cumulative allocation-retry and OOM counters. These are endpoint values, not window means or peaks. No sample is taken per scheduling event, while disabled, or for an empty flush. The sampler does not request CUDA initialization, synchronization, cache clearing or peak-stat resets.
 
@@ -165,13 +165,13 @@ Each nonempty `tuning_observation` flush then adds `allocator_snapshot`. The nat
 
 ## Optional MegaMoE buffer provenance
 
-`SGLANG_TUNING_MOE_BUFFER_STATS=1` enables `tuning_moe_buffer` after each process-local SGLang buffer-cache miss, independently of the observation interval. It is disabled by default and has not been deployed in R6. CPU tests check cache-hit silence, unchanged buffer identity and metadata failure handling. Actual four-rank pinned-image library construction/metadata checks now pass for four source-derived geometries; MoE kernels, full SGLang GPU cache integration and serving overhead remain unvalidated. Requested20,480 aligned to21,120, so use resolved geometry for sizing.
+`SGLANG_TUNING_MOE_BUFFER_STATS=1` enables `tuning_moe_buffer` after each process-local SGLang buffer-cache miss, independently of the observation interval. It is disabled by default and has not been deployed in R6. CPU tests check cache-hit silence, unchanged buffer identity and metadata failure handling. Actual four-rank pinned-image library construction/metadata checks pass for four source-derived geometries. Eight target/draft receipts per startup are verified in R8b/R9/R10 and R11; library-kernel variant provenance and isolated serving overhead remain unvalidated. Requested20,480 aligned to21,120, so use resolved geometry for sizing.
 
 The receipt reads existing CPU metadata: requested and aligned token caps, process-group size, expert/top-k/hidden/intermediate/shared-expert geometry, SMS, bounded MMA/activation kinds and exposed tensor bytes. It adds no sizing query, tensor read, collective or synchronization to the existing allocation path. Cache misses do not prove fresh physical allocation in the library/allocator. Process-group identity and addresses are omitted; identical geometry is not sufficient to deduplicate receipts. The reported tensor size excludes other allocations and transient peaks. Missing metadata is `unavailable`, not zero. Pair this provenance with allocator snapshots and physical-memory observations after GPU validation.
 
-## Proposed policy diagnostics
+## Optional policy diagnostics
 
-[POLICY_DIAGNOSTICS.md](POLICY_DIAGNOSTICS.md) specifies the remaining queue-age/readiness/continuation gap. It is a design, not emitted telemetry. Sorting precedes admission readiness; current queue-episode age, HRRN submitted-token age and first-forward histogram populations must stay distinct. The source-audited policy costs also differ for output-bearing requests; that synthetic possibility does not establish workload incidence.
+[POLICY_DIAGNOSTICS.md](POLICY_DIAGNOSTICS.md) documents implemented sampled policy telemetry and its remaining readiness/continuation ambiguities. Enable with `SGLANG_TUNING_POLICY_INTERVAL=10`; it defaults off. Full R8b/R9/R10 establish all-rank sampled coverage. R9/R10 include pass endings; R11 adds stored pass-end budget residuals, initially verified on all ranks during warmup. Sorting precedes admission readiness; current queue-episode age, HRRN submitted-token age and first-forward histogram populations must stay distinct. The source-audited policy costs also differ for output-bearing requests; that synthetic possibility does not establish workload incidence.
 
 
 ### Optional native allocator peaks (prepared after R10 freeze)
@@ -180,4 +180,11 @@ The allocator snapshot can also retain `peaks.values` for allocated, reserved, a
 
 Semantics follow [PyTorch 2.14 memory_stats](https://docs.pytorch.org/docs/2.14/generated/torch.cuda.memory.memory_stats.html) and [reset_peak_memory_stats](https://docs.pytorch.org/docs/2.14/generated/torch.cuda.memory.reset_peak_memory_stats.html). Local optional graph-pool sizing and DFlash measurement can reset counters; the observer adds no reset, sync, initialization or second stats call. A sampled decrease indicates a reset/change, but sampling can miss resets.
 
-This closes part of the sampled-endpoint gap for native allocations only. External/private scope and physical peaks remain separate questions.32CPUcontracts pass; pinned-image GPU API/release-retention checks and all-rank serving coverage are pending a later deployment. R10 remains frozen without these fields.
+This closes part of the sampled-endpoint gap for native allocations only. External/private scope and physical peaks remain separate questions.32 actual ARM contracts and the pinned-image GPU0 API/release-retention probe pass. Initial R11 warmup validates all four peak fields and reset scope in53snapshots across all ranks. Measured-phase coverage and isolated serving overhead remain pending. Frozen R10 lacks these peak fields.
+
+
+## Startup pool sizing and initialization boundaries
+
+For DeepSeek V4, the request cap affects more than admission: fixed compression state and eligible cap-mode SWA sizing consume the budget used to derive FULL capacity. The existing `DSV4 memory calculation` line exposes this calculation; its GB-labeled values are rounded GiB. R10→R11 reduces actual request rows96→64, fixed SWA26.06→25.32GiB and raises FULL tokens3.0203%. At ratio2, positive host-capacity gauges also rise35,090,944→36,150,784 slots/rank. These coupled effects need separate interpretation from graph coverage and physical memory.
+
+HiCache stats default to zero before populated prefill/decode reports. R11's initial fully labeled scrape showed zero host capacity, then positive capacity10s later. Require producer progress and complete rank coverage before interpreting startup zeros. The graph records this boundary; preserve initial zeros as observations rather than silently substituting an inferred capacity.

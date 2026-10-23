@@ -121,7 +121,8 @@
       "reject_if": "Measured capacity does not change or another physical pool still binds.",
       "status": "Startup capacity coupling observed; no isolated memory-bottleneck or performance benefit established",
       "runtime_evidence": [
-        "R11 startup after reducing global request cap384 to256: all four ranks resolve64 rows and18,075,392 FULL tokens versus96 rows/17,545,472 in R10. Fixed SWA falls26.06 to25.32GiB at the same logged50.35GiB budget. This confirms a coupled sizing change, not physical headroom or a throughput gain. All eight Engram backing receipts now round to100%, unlike partial R10 backing; retain this confounder."
+        "R11 startup after reducing global request cap384 to256: all four ranks resolve64 rows and18,075,392 FULL tokens versus96 rows/17,545,472 in R10. Fixed SWA falls26.06 to25.32GiB at the same logged50.35GiB budget. This confirms a coupled sizing change, not physical headroom or a throughput gain. All eight Engram backing receipts now round to100%, unlike partial R10 backing; retain this confounder.",
+        "All-rank positive startup gauges confirm host FULL capacity35,090,944 to36,150,784 slots, exactly2times the corresponding device FULL capacity. R11 initial labels carried zero before a populated report10.000s later. These are logical FULL slots, not physical host bytes or every side pool."
       ]
     },
     {
@@ -346,7 +347,8 @@
       "status": "Producer paths/defaults source-audited; procfs omissions do not independently verify runtime disablement. No instrumentation flag change.",
       "runtime_evidence": [
         "baseline-hour-r3 restricted procfs snapshot omitted both producer flags; pinned defaults are False and launch config does not request them. Earlier wording that this verified disablement is withdrawn. Zero histogram counts and overlap none still cannot establish no synchronization or exposed CPU time.",
-        "R5b CPU-only spawned-process probe in the same image reproduced procfs omissions after setproctitle while Python getenv retained known values. See campaign evidence/proc-environment-title-probe.json. Live scheduler procfs omissions are therefore inconclusive; no server mutation was made."
+        "R5b CPU-only spawned-process probe in the same image reproduced procfs omissions after setproctitle while Python getenv retained known values. See campaign evidence/proc-environment-title-probe.json. Live scheduler procfs omissions are therefore inconclusive; no server mutation was made.",
+        "R11 first fully labeled HiCache capacity scrape reports0on all four ranks;10.000s later all report36,150,784. Source stats default0 and prefill/decode reporting populates them. A present series can still reflect initialization, so zero alone does not establish disabled HiCache or zero capacity."
       ]
     },
     {

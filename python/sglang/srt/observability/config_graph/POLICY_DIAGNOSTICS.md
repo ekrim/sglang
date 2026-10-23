@@ -1,6 +1,6 @@
 # Bounded scheduling-policy diagnostics
 
-Status: implemented, default off, with CPU behavior contracts passing. Initial all-rank R8 warmup emission is verified. R8 was interrupted before profiling and has no score; unchanged R8b retries under durable Slurm ownership. Full replay validation and overhead measurement remain pending. No new event here is present in R6/R7. This refines campaign gap G003 and the `prefill-ordering-and-aged-queues` decision rule. Do not infer current behavior from a proposed field.
+Status: implemented and default off. Full R8b/R9/R10 validate all-rank sampled policy coverage; R9/R10 also validate pass endings. R11 adds stored budget residuals, with initial all-rank warmup coverage verified. The current revision passes32 actual ARM contracts across tuning and policy tests. Isolated serving overhead and full R11 measured-phase coverage remain unvalidated. These records are absent from R6/R7. This refines gap G003 and the `prefill-ordering-and-aged-queues` rule; preserve each run's frozen source when interpreting fields.
 
 The question is whether old requests are repeatedly bypassed by ordering, held by admission readiness, or progressing through long continuation work. Current first-forward histograms omit requests that are still waiting and later continuation/retraction waits. Gate encounter counts do not measure exposed wait.
 
@@ -62,11 +62,11 @@ R8b's first quarter exposed an interpretation hazard: `visits.admitted` establis
 
 A later development refinement adds optional `pass_end`: cause (`pass_budget_stop`, `request_slots_stop`, `adder_result`, `queue_scan_exhausted`), the existing adder result and admitted boolean when applicable, plus visited/unvisited candidate counts. It adds no queue/readiness scan, GPU call or decision. A candidate counted at an early stop has been visited, even if readiness is unknown. Exhausting the scan is not admitting the whole queue. Adder result categories do not identify which underlying memory/compute resource caused a stop.
 
-Thirty CPU contracts pass in total, including actual production-loop equivalence for admitted-and-stop outcomes and explicit unknowns when no scan completed. Full ARM/serving validation remains pending; frozen R8b1422f5c has no pass_end field.
+Thirty CPU contracts pass in total, including actual production-loop equivalence for admitted-and-stop outcomes and explicit unknowns when no scan completed. Later actual ARM contracts and full R9/R10 sampled pass-end coverage pass; frozen R8b1422f5c has no pass_end field. Isolated serving overhead remains unvalidated.
 
 
 ## Optional pass-end budget residuals (prepared after R10 freeze)
 
 `pass_end.budget_remaining` copies stored CPU scalar `rem_input_tokens`, `rem_chunk_tokens`, and `rem_dllm_tokens` immediately after the existing admission loop. It does not re-evaluate budget, memory, or readiness checks. Missing fields are unknown; null preserves an unset value; negative/zero residuals remain distinct from positive values. Input and chunk exhaustion may coexist. These residuals do not uniquely attribute OTHER or NO_TOKEN, and should be read with the recorded stop site and existing gate observations.
 
-R9 established that1172of1177sampled adder-result stops followed admission; a simple admitted count hid these endings. R9 and frozenR10 lack residual fields. The refinement passes31CPUcontracts, including production loop/finalization equivalence and no custom/tensor conversion; actual ARM/serving coverage remains pending.
+R9 established that1172of1177sampled adder-result stops followed admission; a simple admitted count hid these endings. R9 and frozenR10 lack residual fields. The refinement passes31CPUcontracts, including production loop/finalization equivalence and no custom/tensor conversion; the later32-contract ARM suite passes. Initial R11 warmup has residuals in50/50sampled passes acrossfourranks, with44input/chunk co-exhaustions. Full measured-phase coverage and unique bottleneck attribution remain pending.
