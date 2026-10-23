@@ -84,3 +84,6 @@ Examples: `pass_input_budget` identifies the ordered input check; with both resi
 Four new CPU tests execute production budget/shape-selection methods and real sample finalization; paired enabled/disabled cases preserve results and capacity-call counts. A static contract checks all26direct base return sites have literal annotations. The existing production admission-loop test additionally checks an ignored budget NO_TOKEN site cannot leak into an unannotated custom add result. Actual ARM/full serving coverage and isolated overhead are pending. No active R11 executable or historical record has been changed.
 
 All41local observability contracts pass (22tuning,10policy,5graph-baseline,4return-site); this does not replace actual ARM and serving validation.
+
+
+Qualified R11 (frozen b6df8ee) completes measured field coverage: all1383sampled policy passes carry stored residuals, with1432successful native snapshots acrossfourranks. Full output/accounting/archive qualification passes; total341,312.95590TPS/GPU is5.9902%belowbestR6. R11 lacks the newly prepared returned sites and initialized graph counters. Deployment/overhead validation for those remains separate from this historical full-run coverage.
