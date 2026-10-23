@@ -2804,7 +2804,7 @@
         "anchor": "\"prefill.chunk_slot\""
       },
       "availability": "new; tuning_observation_interval > 0; CPU-only locally tested, GPU validation pending",
-      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput.",
+      "interpretation": "Predicate/check occurrences, not unique requests, duration, or lost throughput. Producer is conditional on shortest-prefill-first, an existing unfinished chunk, and a candidate requiring another chunk. Other policies bypass this particular check; absence after changing policy does not establish relief of a shared resource.",
       "numeric_fields": [],
       "counts": "CPU observations/checks; see README for exact population and duplicate-check caveats"
     },
@@ -3141,19 +3141,21 @@
         "path": "python/sglang/srt/managers/schedule_policy.py",
         "anchor": "def _sort_by_shortest_prefill"
       },
-      "behavior": "Shortest-prefill-first sorts by temporary duplicate-prefix deferral, estimated uncached tokens, then queue-entry time. Age breaks work-size ties rather than overriding larger work. Its chunk limit reserves capacity for shorter waiting requests, reducing a continuing long request to at least one page when reservation fills the budget. HRRN instead uses processed-token aging divided by estimated uncached work; policies change both ordering and prefix locality.",
+      "behavior": "Shortest-prefill-first sorts by temporary duplicate-prefix deferral, estimated uncached tokens, then queue-entry time. Age breaks work-size ties rather than overriding larger work. Its chunk limit reserves capacity for shorter waiting requests, reducing a continuing long request to at least one page when reservation fills the budget. HRRN instead uses processed-token aging divided by estimated uncached work; policies change both ordering and prefix locality. Switching to HRRN also removes shortest_prefill_chunk_limit reservation for shorter waiting requests; it is a policy-package intervention, not an ordering-only change. Remaining compute/KV/chunk constraints still apply. HRRN age is accumulated processed prefill tokens since queue entry, not wall-clock seconds; fully cached work and temporary duplicate-prefix deferral retain their own priority.",
       "conditions": [
         "Cache-aware policy with prefix matching enabled; inspect resolved policy and specialized paths.",
-        "The existing shortest-prefill diagnostic log is sampled once per128 sorting calls; it is not a heartbeat or oldest-request receipt."
+        "The existing shortest-prefill diagnostic log is sampled once per128 sorting calls; it is not a heartbeat or oldest-request receipt.",
+        "prefill.chunk_slot is emitted only in the shortest-prefill-first path when another unfinished chunk exists and a new request would need chunking. Its absence after a policy switch is a producer-population change, not proof of spare chunk capacity."
       ],
       "confounders": [
         "Estimated uncached work differs from total input length and from actual transfer/replay cost.",
         "Cadence, compute budgets, capacity and cache readiness can delay even the first-ranked request.",
         "First-forward queue histograms observe only admitted requests; clearing old backlog can increase measured tail counts and mean queue time.",
-        "Client/router/tokenizer delay and later chunk service contribute to TTFT beyond the initial scheduler queue wait."
+        "Client/router/tokenizer delay and later chunk service contribute to TTFT beyond the initial scheduler queue wait.",
+        "A policy switch changes continuation reservation and which chunk-slot checks can emit, even with identical configured chunk/input budgets. Compare actual admitted work and completed outcomes rather than treating disappearing event names as a gain."
       ],
       "hypothesis": "Under sustained mixed-work queues, ordering can favor repeated cheap admissions while expensive requests wait, hurting trajectory progress and tails. A different policy may improve fairness but reduce cache locality or useful throughput.",
-      "next_test": "After a complete result, consider one policy change at fixed cadence, load and budgets. Compare initial queue-wait histograms, outstanding oldest age if available, finalized TTFT/cancellations, cache/computed work and full-run total/output throughput. Do not rank policies from admitted-tail counts alone.",
+      "next_test": "After a complete result, consider one policy change at fixed cadence, load and budgets. Compare initial queue-wait histograms, outstanding oldest age if available, finalized TTFT/cancellations, cache/computed work and full-run total/output throughput. Do not rank policies from admitted-tail counts alone. Record this continuation-reservation coupling prospectively; direct reservation bytes/tokens and oldest outstanding age remain unobserved.",
       "remaining_gap": "Existing sampled queue/shortest-work log omits oldest waiting age, work distribution and continuation reservation. Add bounded age/work-band observations only if existing histograms and request records cannot distinguish ordering from eligibility.",
       "evidence": "Source-audited; C384 live/archived histograms show long pre-first-forward waits. No policy-change performance experiment yet."
     },
@@ -4762,6 +4764,11 @@
     {
       "source": "mechanism.moe_backend",
       "target": "log.moe_buffer_creation",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_ordering",
+      "target": "event.prefill.chunk_slot",
       "relation": "observed_by"
     }
   ]

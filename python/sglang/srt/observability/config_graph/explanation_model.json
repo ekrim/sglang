@@ -355,17 +355,19 @@
         "mechanism.prefill_ordering",
         "metric.queue_time_seconds",
         "metric.time_to_first_token_seconds",
-        "log.shortest_prefill_order"
+        "log.shortest_prefill_order",
+        "event.prefill.chunk_slot"
       ],
       "observation": "Persistent mixed-work queues and long first-forward waits coexist with many fast requests; client TTFT tails are much longer than connection/send overhead.",
       "diagnosis": "Admission ordering may repeatedly favor inexpensive uncached work. Shortest-prefill-first uses age only as a tie-breaker; initial queue waits are distinct from later chunk execution and router delay.",
       "alternatives": [
         "Cadence, token/capacity gates or cache readiness can delay admission independent of sorting.",
         "An increase in observed long waits can mean old backlog is finally being admitted; still-waiting requests remain censored.",
-        "Closed-loop trajectory progress and cache locality change with policy; total input length is not uncached work."
+        "Closed-loop trajectory progress and cache locality change with policy; total input length is not uncached work.",
+        "Shortest-prefill-first uniquely reserves continuation budget for shorter waiting requests and gates the chunk-slot event. HRRN removes that reservation, so a single policy flag changes more than sorting; absent chunk-slot events under HRRN are expected producer semantics."
       ],
-      "check": "Use source-defined queue histogram bucket/count/sum deltas by rank and observation time, plus finalized client request-start strata and cancellations. The sampled shortest_uncached log describes the first sorted request, not the oldest. Verify HRRN processed-token arrival/accounting path before proposing it.",
-      "action": "After full-run diagnosis, consider a single schedule_policy trial at unchanged cadence, concurrency and budgets. Choose a policy with an explicit ordering/aging rationale; retain canonical AgentX replay and fresh serving state. Add bounded oldest-age/work-band observations if admitted histograms cannot resolve outstanding backlog.",
+      "check": "Use source-defined queue histogram bucket/count/sum deltas by rank and observation time, plus finalized client request-start strata and cancellations. The sampled shortest_uncached log describes the first sorted request, not the oldest. Verify HRRN processed-token arrival/accounting path before proposing it. HRRN age advances with processed prefill tokens, not wall time; inspect queue-entry/requeue snapshots. Record continuation-reservation changes and event producer conditions before comparison.",
+      "action": "After full-run diagnosis, consider a single schedule_policy trial at unchanged cadence, concurrency and budgets. Choose a policy with an explicit ordering/aging rationale; retain canonical AgentX replay and fresh serving state. Add bounded oldest-age/work-band observations if admitted histograms cannot resolve outstanding backlog. Treat SPF-to-HRRN as the complete policy package, including loss of shorter-work continuation reservation; do not claim an isolated aging effect.",
       "expected": "An aging/order change should alter which work is admitted, reduce persistent old backlog or improve finalized tails, with possible loss of prefix locality and throughput.",
       "reject_if": "No improvement in finalized tails/backlog or trajectory progress, or unacceptable loss of qualified total/output throughput or latency Pareto position. Do not accept based only on fewer emitted long-wait observations.",
       "status": "Existing histogram confirms scheduler queue tails; policy-change benefit untested",
@@ -373,7 +375,8 @@
         "First30min retained windows (~1600s counter coverage): C256 interval24 has16166 first-forward observations and3 waits>300s; C384 interval24 has19419 and59; C384 interval18 has19699 and84. These are observation-time cohorts, not matched requests or full1800s totals. C384 interval24 is unqualified after finalization loss.",
         "Final C384 interval18 TTFTp99 is58.508s, maximum2561.266s;128drain cancellations remain separately accounted. Queue-age observations establish delayed admission but do not isolate ordering from budget/readiness. The next selected test addresses compute budget; an aging-policy experiment remains an alternative.",
         "R6 first15min has9945 first-forward observations, meanwait2.7108s and16 waits>300s; R5b has9639,2.5577s and13>300s. These admission-time cohorts omit still-waiting and continuation work. Lower mean queue does not alone establish improved tail latency or policy quality.",
-        "R6 15\u201330min admission meanwait3.671 vsR5b6.737s improved, but30\u201345min reverses to5.464 vs5.154s despite14.55% lower mean queue and15.14% higher computed prefill. Above600/1200s admissions25/13 vs23/11. This is a counterexample to inferring tail quality from queue depth or one quarter; different cohorts and still-waiting/continuation work prevent isolated policy attribution. Keep the current policy fixed until full replay and final accounting."
+        "R6 15\u201330min admission meanwait3.671 vsR5b6.737s improved, but30\u201345min reverses to5.464 vs5.154s despite14.55% lower mean queue and15.14% higher computed prefill. Above600/1200s admissions25/13 vs23/11. This is a counterexample to inferring tail quality from queue depth or one quarter; different cohorts and still-waiting/continuation work prevent isolated policy attribution. Keep the current policy fixed until full replay and final accounting.",
+        "CPU audit of actual methods unchanged from frozen R6: with20480 budget,256-token pages and2000/3000-token shorter waiting requests, SPF caps a continuing100000-token request at15360 while HRRN returns no policy-specific limit. A synthetic older10000-token request outranks a newer1000-token request under HRRN token aging but not SPF. This confirms source behavior only, not a selected/GPU-tested policy experiment or throughput benefit."
       ]
     },
     {
