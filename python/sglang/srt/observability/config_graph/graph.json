@@ -3479,6 +3479,39 @@
       },
       "availability": "ValueError during DeepSeek V4 host-pool sizing when hicache_size > 0; verified with actual CPU sizing function, not a GPU launch.",
       "interpretation": "This path accepts hicache_ratio for sizing; an explicit positive GiB size is unsupported. Do not treat this as insufficient RAM or repair it by reserving a larger host."
+    },
+    {
+      "id": "mechanism.dsv4_request_pool_sizing",
+      "kind": "mechanism",
+      "title": "DeepSeek V4 request cap also sizes fixed state and SWA retention",
+      "source": {
+        "path": "python/sglang/srt/model_executor/pool_configurator.py",
+        "anchor": "def _resolve_swa_cap_tokens"
+      },
+      "behavior": "Explicit max_running_requests is divided by attention DP size for per-worker request slots. It sizes fixed C128/C2 state and, in eligible non-unified cap mode, the SWA request budget plus prefix-tail headroom. Fixed bytes are subtracted before deriving aligned FULL token capacity. At a fixed HiCache ratio, changed device geometry can also change host retention.",
+      "conditions": [
+        "SWA cap mode requires an explicit request cap and sliding-window size, no operator SWA ratio, non-unified pools, and positive chunked prefill unless decode-only. Other modes have different sizing rules.",
+        "Fixed C128/C2 state depends on present layer types, request-slot padding, compression mode and speculative settings; the final scheduler cap can undergo other capacity clamps."
+      ],
+      "confounders": [
+        "An explicit swa_prefix_tails fixes prefix-tail count, not the request-dependent SWA floor. With no explicit tails, the default can depend on the row cap too.",
+        "Overlap, draft allocation, eviction interval, PD extra slots, chunk size, alignment and available-memory baseline affect the calculation. Pool capacity and physical allocation/headroom are different observations."
+      ],
+      "hypothesis": "Lowering admitted-row capacity may improve graph coverage and change KV retention simultaneously. A throughput change cannot be assigned exclusively to scheduling or graph speed.",
+      "next_test": "Preserve all-rank resolved row limits, DSV4 sizing receipts, actual FULL/SWA and host capacities, backing and graph-mode service. Compare the full replay and its regimes; do not normalize away a real capacity consequence or claim isolated attribution.",
+      "remaining_gap": "The startup sizing receipt does not measure all allocations, transient headroom, host prefix loss or the independent throughput contribution of each coupled mechanism.",
+      "evidence": "R10 to R11 startup on the same four GB200s: declared cap384 to256 gives actual96 to64 rows/rank; available budget remains logged50.35GB, fixed SWA26.06 to25.32GB and actual FULL capacity17,545,472 to18,075,392 tokens/rank (+3.0203%). All-rank receipts verified; R11 performance is pending. Values labeled GB in this log are rounded GiB by the source division."
+    },
+    {
+      "id": "log.dsv4_memory_calculation",
+      "kind": "log",
+      "name": "DSV4 memory calculation",
+      "source": {
+        "path": "python/sglang/srt/model_executor/pool_configurator.py",
+        "anchor": "DSV4 memory calculation: unified="
+      },
+      "availability": "DeepSeek V4 byte-budget pool sizing at startup; emitted per worker in calculate_pool_sizes. Explicit token sizing and other model/pool paths need not emit this log.",
+      "interpretation": "Reports sizing mode, byte coefficient, available budget, fixed state/SWA components and aligned FULL token capacity. GB-labeled values are rounded after division by2^30, not physical allocator measurements; cross-check final scheduler/pool limits and rank completeness."
     }
   ],
   "edges": [
@@ -5118,6 +5151,41 @@
       "source": "mechanism.graph_dispatch",
       "target": "mechanism.prefill_decode_cadence",
       "relation": "interacts_with"
+    },
+    {
+      "source": "config.max_running_requests",
+      "target": "mechanism.dsv4_request_pool_sizing",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.swa_prefix_tails",
+      "target": "mechanism.dsv4_request_pool_sizing",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.chunked_prefill_size",
+      "target": "mechanism.dsv4_request_pool_sizing",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.dsv4_request_pool_sizing",
+      "target": "mechanism.hybrid_pools",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.dsv4_request_pool_sizing",
+      "target": "mechanism.dsv4_host_sizing",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.dsv4_request_pool_sizing",
+      "target": "log.dsv4_memory_calculation",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.dsv4_request_pool_sizing",
+      "target": "metric.max_total_num_tokens",
+      "relation": "observed_by"
     }
   ]
 }

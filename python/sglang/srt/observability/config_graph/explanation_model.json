@@ -78,13 +78,15 @@
       "id": "request-row-cap",
       "graph_nodes": [
         "config.max_running_requests",
-        "mechanism.request_admission"
+        "mechanism.request_admission",
+        "mechanism.dsv4_request_pool_sizing"
       ],
       "observation": "Request-slot encounters and a growing queue while device capacity remains available.",
       "diagnosis": "Request rows may constrain admission before KV capacity is exhausted.",
       "alternatives": [
         "An earlier gate can hide a later memory limit.",
-        "Increasing active rows can exceed decode graph capture coverage."
+        "Increasing active rows can exceed decode graph capture coverage.",
+        "For DSV4, changing row capacity also changes fixed-state/SWA sizing and may change device FULL plus ratio-sized host retention. Read sizing logs before interpreting a pure admission effect."
       ],
       "check": "Compare resolved per-rank row limit with running requests and graph-use metrics; inspect FULL/SWA separately.",
       "action": "Raise only the binding per-rank admission cap in a bounded trial; account for graph and request-pool memory.",
@@ -102,7 +104,9 @@
         "mechanism.kv_memory",
         "mechanism.hybrid_pools",
         "config.mem_fraction_static",
-        "mechanism.dsv4_host_sizing"
+        "mechanism.dsv4_host_sizing",
+        "mechanism.dsv4_request_pool_sizing",
+        "log.dsv4_memory_calculation"
       ],
       "observation": "FULL/SWA/shared-capacity failures during queued work, or retractions under sustained load.",
       "diagnosis": "The effective device-pool geometry or reservations cannot fit the workload.",
@@ -115,15 +119,18 @@
       "action": "Choose one evidenced intervention: modest static-memory increase if proven headroom, or lower active-request/reservation pressure; never infer memory from the flag alone.",
       "expected": "Capacity gate clears without OOM/retraction or excessive recomputation.",
       "reject_if": "Measured capacity does not change or another physical pool still binds.",
-      "status": "Source-backed hypothesis; runtime pending",
-      "runtime_evidence": []
+      "status": "Startup capacity coupling observed; no isolated memory-bottleneck or performance benefit established",
+      "runtime_evidence": [
+        "R11 startup after reducing global request cap384 to256: all four ranks resolve64 rows and18,075,392 FULL tokens versus96 rows/17,545,472 in R10. Fixed SWA falls26.06 to25.32GiB at the same logged50.35GiB budget. This confirms a coupled sizing change, not physical headroom or a throughput gain. All eight Engram backing receipts now round to100%, unlike partial R10 backing; retain this confounder."
+      ]
     },
     {
       "id": "decode-graph-coverage",
       "graph_nodes": [
         "mechanism.graph_dispatch",
         "metric.cuda_graph_passes_total",
-        "config.max_running_requests"
+        "config.max_running_requests",
+        "mechanism.dsv4_request_pool_sizing"
       ],
       "observation": "Eager dispatch grows under high active batch sizes despite a configured decode graph runner.",
       "diagnosis": "Decode/verify graph coverage may be insufficient, but the eager counter also includes prefill and idle paths.",
@@ -137,10 +144,11 @@
       "action": "After full-run evidence confirms relevant uncovered decode/verify sizes, choose one fresh trial: lower the resolved per-rank admitted-request cap within verified capture coverage, or increase capture coverage after validating added memory/KV cost. Keep trajectory load and other controls fixed when testing this interaction. Do not change the active replay.",
       "expected": "Relevant graph replay recovers with useful token service and acceptable canonical throughput/latency; a row-cap trial may trade batch parallelism for faster steps.",
       "reject_if": "Replay does not recover, the unsupported size/gate remains, or lost batch parallelism/KV retention makes the qualified throughput/latency tradeoff worse.",
-      "status": "Ambiguous signal: do not auto-change from aggregate eager counts",
+      "status": "R10 full replay supports a cap/coverage trial; R11 is running, outcome pending",
       "runtime_evidence": [
-        "R10 early measurement: decode_none first appears at profiling+349.118s with cumulative4perrank, then reaches14perrank by+579.121s. The observed endpoint delta is10perrank over230.002s; no invented zero baseline for earlier absence. The count establishes some target-result non-graph execution, not its failed predicate or critical-path cost. R10 remains active and unchanged; no capture-cap trial selected from this evidence.",
-        "R10 Q2 final window28.5\u201330min: sampled rank3active reaches83 versus observed capturemax64; allranks decodegraph0.05/s and decode_none4.462/s, versus~20.2graphsteps/s in27\u201328.5min. Q3firstwindow30\u201331.5min has0graph/4.525nongraphsteps/s and rank3max81;31.5\u201333min partially recovers~10.125graph/2.287nongraphsteps/s. Existing draft-eager emission summaries showbatch65\u201388. No Q2native retry/OOMdelta. Source DP graph sizing takes max raw per-rank request count; explicit server cap divides byattn_dp_size. This supports a cap/coverage interaction but does not isolate first failed predicate or eager CPU versus GPU cost. Full run and next intervention pending."
+        "R10 early measurement: decode_none first appears at profiling+349.118s with cumulative4perrank, then reaches14perrank by+579.121s. The observed endpoint delta is10perrank over230.002s; no invented zero baseline for earlier absence. The count establishes some target-result non-graph execution, not its failed predicate or critical-path cost. This early observation alone did not justify a capture-cap trial.",
+        "R10 Q2 final window28.5\u201330min: sampled rank3active reaches83 versus observed capturemax64; allranks decodegraph0.05/s and decode_none4.462/s, versus~20.2graphsteps/s in27\u201328.5min. Q3firstwindow30\u201331.5min has0graph/4.525nongraphsteps/s and rank3max81;31.5\u201333min partially recovers~10.125graph/2.287nongraphsteps/s. Existing draft-eager emission summaries showbatch65\u201388. No Q2native retry/OOMdelta. Source DP graph sizing takes max raw per-rank request count; explicit server cap divides byattn_dp_size. This supports a cap/coverage interaction but does not isolate first failed predicate or eager CPU versus GPU cost. Historical interim observation; see the qualified result and selected test below.",
+        "Qualified R10 scores272,915.46513total/2,387.65364outputTPS/GPU,24.83%below bestR6. Q3decode service falls52.79% versusR6; Q4 spontaneously recovers to20.037graphsteps/s and decode+2.12%. Earlier logical-cache decline and changed realized mix remain confounders. R11 keepsC512/capture64/cadence18, lowers admitted cap96 to64/rank and validates that limit at startup. FULL capacity rises3.0203% and backing changes; graph recovery and full throughput remain unproven."
       ]
     },
     {
@@ -411,7 +419,8 @@
         "R8b Q1:87policy samples and90native snapshots perrank,allSPF/knownages. Outstanding oldest episode approaches600seconds;29samples perrank pair an age>300seconds with a cheaper selected head. No sampled prefetch/staging pending, but unvisited readiness unknown. Source audit shows admitted visits can also terminate the pass; developed separate pass_end fields with CPU production-loop equivalence including admitted+NO_TOKEN/OTHER. Not present in R8b.",
         "R8b SPF samples acrossfullreplay show cheaperheads while oldestepisodesgrowto3081\u20133298s. No sampledreadinesspending outcomes, but unvisitedreadinessunknown. Q2oldestprefixdeferred only0/0/2/0of86perrank; output-bearing queue-key appearances0. These do not establish a unique throughput cause. Admission can terminate a pass: new8245279pass_end distinguishes that inR9;30actualARMcontracts passed, servingcoveragepending.",
         "R9 newpass_end emitted in all1387sampled profiling passes across4ranks:1177adder_result(other),121precandidatepass_budget_stop,89queue_scan_exhausted.1172of1177adder endings followed admission. No request_slots_stop observed. This resolves admission-versus-pass-stop ambiguity, but OTHER still obscures exact resource; sample aggregation is not unique requests or blockedtime. Add scalar residuals/existing stop-site attribution before attributing OTHER solely to inputbudget. Oldest episodes reach2796\u20133294s; unvisited readiness remains unknown.",
-        "R9 OTHER ambiguity prompted optional stored budget_remaining fields at pass finalization: rem_input_tokens,rem_chunk_tokens,rem_dllm_tokens. No added budget_state/capacity/readiness call or tensor conversion; preserve simultaneous nonpositive residuals and null/missing distinctions.31CPUcontracts pass including actual loop+finalization enabled/disabled equivalence; not deployed in frozenR10source52e9060, ARM/full serving validation pending. Residual exhaustion supports a budget explanation but is not exact branch attribution."
+        "R9 OTHER ambiguity prompted optional stored budget_remaining fields at pass finalization: rem_input_tokens,rem_chunk_tokens,rem_dllm_tokens. No added budget_state/capacity/readiness call or tensor conversion; preserve simultaneous nonpositive residuals and null/missing distinctions.31CPUcontracts pass including actual loop+finalization enabled/disabled equivalence; not deployed in frozenR10source52e9060, ARM/full serving validation pending. Residual exhaustion supports a budget explanation but is not exact branch attribution.",
+        "R11 initial warmup validates stored pass-end residuals on all four ranks:50/50sampled passes include input/chunk values,44have both nonpositive. This resolves the stored budget state at these pass ends but does not uniquely choose between co-exhausted controls, describe unvisited readiness or establish a profiling bottleneck. Absent dLLM fields remain absent, not invented zeros."
       ]
     },
     {
@@ -436,7 +445,7 @@
       "action": "Keep an active benchmark unchanged. If an actual allocation failure occurs, preserve it and choose one memory-headroom intervention for a fresh trial. When memory provenance is ambiguous, validate and enable bounded allocator/buffer receipts in a separate instrumentation trial before attributing low free memory to a particular config. Never flush caches or reset peaks in a live comparison to manufacture headroom.",
       "expected": "Allocator snapshots distinguish supported native allocator counters from unknown external/pool contributions; a later headroom intervention should reduce actual allocation failures without an unacceptable capacity/throughput loss.",
       "reject_if": "Snapshot coverage/backend is unknown, observation changes behavior materially, or only a reserved-memory subtraction supports the claimed cause.",
-      "status": "All-rank full-hour current-snapshot/buffer coverage established in R8b/R9. Reset-scoped peaks and stored policy residuals are prepared but absent in frozen R10; idle ARM/API validation and serving coverage remain pending. No larger workspace trial selected.",
+      "status": "Reset-scoped peaks pass idle ARM/API checks and initial four-rank R11 warmup coverage. Full measured-phase coverage and serving overhead remain unvalidated. No larger workspace trial selected.",
       "runtime_evidence": [
         "R6 warmup reported rank2 free193/141/117/43MiB at management samples while requests continued without reported errors. Later free space recovered on rank2 while rank0 approached41MiB. These snapshots alone do not prove OOM or isolate live versus reserved memory.",
         "Idle GB200 GPU0 check after R6 preservation:64MiB tensor raised allocated/reserved to67108864bytes; after release allocated/active returned0 while reserved remained67108864.250sampler calls median87.6485us,p95113.216us,max169.728us. Uninitialized call created no CUDA context; explicit init/sync/flush/reset calls forbidden during sampling; nonempty recorder window integration passed. This distinguishes owned allocated versus cached reservation in this scope only; not production serving overhead or external/private memory coverage.",
@@ -444,7 +453,8 @@
         "R8 actual serving init produced target/draft exposedbufferbytes7719933824/4049753984 on everyrank,requested20480/aligned21120,shared1. Early native snapshots allstatusok,allocated~153.4GB,reserved~173.9\u2013178.1GB,OOM0. Low physical free memory cannot be attributed solely to live allocation. Reserved gap is not guaranteed reclaimable; await later warmup/full replay and preserve external/private/transient exclusions.",
         "R8 interruption: observer/server/router/client cancelled together at2026-10-23T05:49:12-13UTC, before profiling began. Last warmup4213/4249returned,4218sent,5inflight,0errors. No performance conclusion. Partial artifacts preserved unchanged; R8b uses the same1422f5c executable and full3600s measurement. Serving overhead cannot be isolated from unmatched startup backing and node/cache state.",
         "R8b all4quarters/all4ranks have native snapshots with no new observed retry/OOM endpoint deltas. Warmup cumulative retry count reached1/rank; later cumulative1 is not a new event. Physicalfree sampled~700MiB during warmup and1059MiB inlaterquarters; reserve-minus-allocated is not proof of safe workspace growth. Eight actual target/draft creation receipts provide partial exposed buffer accounting; transient/private/external peaks remain unknown.",
-        "Prepared after R10freeze: optional native peak counters retained from the existing single memory_stats call, separately scoped since the last peak reset. No extra allocator API call/reset/sync.32CPUcontracts pass, including preserving a decreasing counter rather than hiding resets. Pinned-image API/all-rank serving validation pending. The local GraphPoolPrecarve.measure and DFlash sampling code can reset peaks; neither is evidence that a reset occurred in this run. External/custom/private allocation coverage and total physical peaks remain unresolved."
+        "Prepared after R10freeze: optional native peak counters retained from the existing single memory_stats call, separately scoped since the last peak reset. No extra allocator API call/reset/sync.32CPUcontracts pass, including preserving a decreasing counter rather than hiding resets. Pinned-image API/all-rank serving validation pending. The local GraphPoolPrecarve.measure and DFlash sampling code can reset peaks; neither is evidence that a reset occurred in this run. External/custom/private allocation coverage and total physical peaks remain unresolved.",
+        "R11 frozen sourceb6df8ee passed22+10actualARMcontracts and a GPU0native peak API/release-retention probe. Initial warmup has53successful native snapshots across four ranks, each with all four peak fields and native_allocator_since_last_peak_reset scope. Initial50sampled policy passes all carry residuals;44coexhaust input and chunk budgets. Warmup coverage does not establish measured-phase pressure, isolate instrumentation overhead or expose physical/external/private-pool peaks."
       ]
     },
     {
