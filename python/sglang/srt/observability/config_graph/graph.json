@@ -3544,7 +3544,7 @@
       ],
       "hypothesis": "If eligible boundary work is significant, fusion may improve service at the retained R6 configuration. Compatibility, incidence and speedup are unproven.",
       "next_test": "Validate pinned DeepGEMM API, checkpoint-weight numerics including optional quantized output, same-stream capture warmup and replay with changed data on idle GPUs. Then establish bounded actual branch evidence and use a full canonical replay for any selected candidate.",
-      "remaining_gap": "No distinct executed-branch receipt in this path. Need bounded selected-path/mode/row/quantization evidence with explicit capture semantics; elapsed kernel cost and replay incidence require separate evidence.",
+      "remaining_gap": "No distinct selected-branch log in this path. Existing optional capture traces may reveal actual kernel identities during startup; their export receipt alone is insufficient. Eager/mode-specific incidence, exact missed-dispatch predicates, exposed cost and replay frequency remain unresolved.",
       "evidence": "Source audit at5e70162; idle GPU probe submitted as campaign job3443116, no result yet.",
       "source_audit": [
         {
@@ -3560,6 +3560,58 @@
           "anchor": "def mhc_mega_boundary("
         }
       ]
+    },
+    {
+      "id": "config.enable_profile_cuda_graph",
+      "name": "enable_profile_cuda_graph",
+      "kind": "server_field",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "enable_profile_cuda_graph:"
+      }
+    },
+    {
+      "id": "config.SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE",
+      "name": "SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE"
+      }
+    },
+    {
+      "id": "mechanism.capture_kernel_profile",
+      "kind": "mechanism",
+      "title": "Existing startup capture profiler and kernel trace export",
+      "source": {
+        "path": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py",
+        "anchor": "def _init_profile_context_and_memory_record("
+      },
+      "behavior": "When enable_profile_cuda_graph is enabled, the decode runner profiles CPU/CUDA activity and input shapes around capture, then emits summaries and a memory snapshot. SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE additionally exports the combined Chrome trace after capture. This is separate from a requested runtime workload profile.",
+      "conditions": [
+        "Both the server profiling flag and export environment flag are needed for the combined trace; an environment flag alone is insufficient.",
+        "Inspect actual trace kernel events, target/draft runner and TP rank. The save-path log proves export only."
+      ],
+      "confounders": [
+        "Trace contains capture/warmup activity, not steady-state replay counts or useful-service cost.",
+        "Profiling records memory history and adds startup work; retained memory/capture effects are not established negligible.",
+        "Same runner/rank path can be overwritten on recapture. Preserve timing and file identities; do not assume every trace is from the initial startup.",
+        "A kernel absent from a trace can be in an untraced eager mode or unreached boundary."
+      ],
+      "hypothesis": "Existing kernel traces may establish actual fused mHC selection during startup before adding a new hot-path logger.",
+      "next_test": "On a numerically validated candidate, export traces under its durable run directory, verify target/draft and rank coverage, inspect kernel identities and profile stop before measurement. Confirm a promising throughput result without startup profiling.",
+      "remaining_gap": "No steady-state mode-specific incidence, exact missed-dispatch predicate or exposed critical-path attribution. Profiler overhead and coverage must be checked.",
+      "evidence": "Source-audited existing producer at5e70162; no candidate trace yet."
+    },
+    {
+      "id": "log.cuda_graph_capture_trace_saved",
+      "kind": "log_line",
+      "name": "CUDA graph capture trace saved to:",
+      "source": {
+        "path": "python/sglang/srt/utils/profile_utils.py",
+        "anchor": "CUDA graph capture trace saved to:"
+      },
+      "semantics": "Combined trace export completed for the named runner and TP rank under SGLANG_TORCH_PROFILER_DIR/graph_capture_profile. This receipt does not itself prove a particular kernel ran or quantify its measured-workload incidence."
     }
   ],
   "edges": [
@@ -5239,6 +5291,26 @@
       "source": "config.SGLANG_OPT_DSV41_MEGA_MHC_PREFILL",
       "target": "mechanism.dsv41_mega_mhc_dispatch",
       "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.enable_profile_cuda_graph",
+      "target": "mechanism.capture_kernel_profile",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE",
+      "target": "mechanism.capture_kernel_profile",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.capture_kernel_profile",
+      "target": "log.cuda_graph_capture_trace_saved",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.dsv41_mega_mhc_dispatch",
+      "target": "mechanism.capture_kernel_profile",
+      "relation": "interacts_with"
     }
   ]
 }

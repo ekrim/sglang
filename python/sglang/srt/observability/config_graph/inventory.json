@@ -1500,7 +1500,7 @@
         "anchor": "enable_profile_cuda_graph:"
       },
       "declared_default": "False",
-      "review_status": "not_causally_audited"
+      "review_status": "causal_mapping"
     },
     {
       "id": "config.enable_cudagraph_gc",
