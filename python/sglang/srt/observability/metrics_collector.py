@@ -1370,6 +1370,8 @@ class SchedulerMetricsCollector(_StatLoggerDIMixin):
                 enable_streaming_session=get_serving().enable_streaming_session,
                 server_args=server_args,
             )
+            if current_scheduler_metrics_enabled:
+                collector.initialize_cuda_graph_passes()
         return SchedulerMetricsCollectorContext(
             enable_metrics=enable_metrics,
             is_stats_logging_rank=is_stats_logging_rank,
@@ -1491,6 +1493,19 @@ class SchedulerMetricsCollector(_StatLoggerDIMixin):
         self.num_retracted_output_tokens_total.labels(**self.labels).inc(
             num_retracted_output_tokens
         )
+
+    def initialize_cuda_graph_passes(self) -> None:
+        # Prometheus labeled counters are lazy. Bind the bounded mode set only
+        # on reporting ranks, after init_new resolves all rank/custom labels,
+        # so a valid scrape can distinguish an observed zero from a missing
+        # series. This does not count a pass or reset any existing child.
+        for mode in (
+            "decode_cuda_graph",
+            "decode_none",
+            "prefill_cuda_graph",
+            "prefill_none",
+        ):
+            self.cuda_graph_passes_total.labels(**self.labels, mode=mode)
 
     def increment_decode_cuda_graph_pass(self, value: bool) -> None:
         mode = "decode_cuda_graph" if value else "decode_none"
