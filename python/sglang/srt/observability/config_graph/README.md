@@ -180,7 +180,7 @@ The allocator snapshot can also retain `peaks.values` for allocated, reserved, a
 
 Semantics follow [PyTorch 2.14 memory_stats](https://docs.pytorch.org/docs/2.14/generated/torch.cuda.memory.memory_stats.html) and [reset_peak_memory_stats](https://docs.pytorch.org/docs/2.14/generated/torch.cuda.memory.reset_peak_memory_stats.html). Local optional graph-pool sizing and DFlash measurement can reset counters; the observer adds no reset, sync, initialization or second stats call. A sampled decrease indicates a reset/change, but sampling can miss resets.
 
-This closes part of the sampled-endpoint gap for native allocations only. External/private scope and physical peaks remain separate questions.32 actual ARM contracts and the pinned-image GPU0 API/release-retention probe pass. Initial R11 warmup validates all four peak fields and reset scope in53snapshots across all ranks. Measured-phase coverage and isolated serving overhead remain pending. Frozen R10 lacks these peak fields.
+This closes part of the sampled-endpoint gap for native allocations only. External/private scope and physical peaks remain separate questions.32 actual ARM contracts and the pinned-image GPU0 API/release-retention probe pass. Initial R11 startup/warmup validates all four peak fields and reset scope in53snapshots across all ranks. Measured-phase coverage and isolated serving overhead remain pending. Frozen R10 lacks these peak fields.
 
 
 ## Startup pool sizing and initialization boundaries
