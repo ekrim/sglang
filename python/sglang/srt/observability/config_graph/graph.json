@@ -3178,6 +3178,31 @@
       },
       "availability": "Existing INFO when shortest-prefill-first has queued work, on sorting call1 modulo128.",
       "interpretation": "Queue size and estimated uncached work of the first sorted request. Does not expose longest wait, work distribution, or actual cost."
+    },
+    {
+      "id": "log.dsv41_prefill_autotune",
+      "kind": "log_line",
+      "name": "DSV4.1 MXFP8 prefill autotune size receipt",
+      "source": {
+        "path": "python/sglang/srt/models/deepseek_v4.py",
+        "anchor": "FlashInfer prefill autotune: %d MXFP8 weight layouts at M=%d."
+      },
+      "availability": "Startup INFO after the target generation model tunes at least one eligible resident MXFP8 linear layout. Requires should_run_flashinfer_autotune, model opt-in and a prefill ceiling above the decode-shaped tuning size; CUDA, deterministic-mode, backend and quantization gates apply. The specialized model hook precedes the optional full-model EXTEND gate.",
+      "interpretation": "Reports eligible distinct weight-layout count and the prefill autotune input M. The caller uses max_prefill_buffer_tokens() or max_prefill_tokens; registered ceiling providers and PP dynamic chunking can change that size. This is an indirect check of the resolved prefill ceiling, not a live admitted-batch measurement, a request/KV forward, a MegaMoE buffer-byte receipt, a selected-tactic manifest or a throughput result. Missing output is unknown because producer gates and eligible layouts can suppress it.",
+      "source_audit": [
+        {
+          "path": "python/sglang/srt/model_executor/runner/base_runner.py",
+          "anchor": "maybe_flashinfer_autotune_extend(self, decode_num_tokens=batch_size)"
+        },
+        {
+          "path": "python/sglang/srt/model_executor/runner/flashinfer_autotune.py",
+          "anchor": "def maybe_flashinfer_autotune_extend("
+        },
+        {
+          "path": "python/sglang/srt/runtime_context.py",
+          "anchor": "def max_prefill_buffer_tokens()"
+        }
+      ]
     }
   ],
   "edges": [
@@ -4657,6 +4682,11 @@
       "source": "config.schedule_policy",
       "target": "mechanism.prefill_ordering",
       "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "log.dsv41_prefill_autotune",
+      "relation": "indirectly_observed_by"
     }
   ]
 }

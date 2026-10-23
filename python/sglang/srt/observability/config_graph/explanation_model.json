@@ -37,7 +37,8 @@
         "mechanism.prefill_tokens",
         "config.max_prefill_tokens",
         "config.SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
-        "mechanism.moe_backend"
+        "mechanism.moe_backend",
+        "log.dsv41_prefill_autotune"
       ],
       "observation": "Queued work with input/chunk budget encounters and available KV; explicit interval and request caps are not the dominant obstruction.",
       "diagnosis": "A prefill compute budget stops further admission, but the first emitted gate does not uniquely identify a configuration knob: input exhaustion precedes chunk exhaustion.",
@@ -56,7 +57,9 @@
       "status": "Coherent20480-token per-rank budget trial selected after full replay; not yet launched",
       "runtime_evidence": [
         "GB200 cadence18-hour-r5b window13 (18\u201319.5min): per-rank prefill.admitted input_remaining and chunk_remaining aggregates match, minima0; extend max16384 and replay sum0. This is a bounded window, not a full-run score or proof that raising the budget helps.",
-        "Full interval18 replay retains queued work and matching exhausted16384 input/chunk residuals. Installed DeepGEMM size API queried after serving exit estimates20480 versus16384 adds1.916\u20132.040GiB across target/draft buffer cases. These are source-derived possible keys, not actual allocation receipts or total peak headroom. Next trial couples chunk81920global/input20480/MegaMoEcap20480, with other server/load controls fixed."
+        "Full interval18 replay retains queued work and matching exhausted16384 input/chunk residuals. Installed DeepGEMM size API queried after serving exit estimates20480 versus16384 adds1.916\u20132.040GiB across target/draft buffer cases. These are source-derived possible keys, not actual allocation receipts or total peak headroom. Next trial couples chunk81920global/input20480/MegaMoEcap20480, with other server/load controls fixed.",
+        "R6 startup reports seven eligible MXFP8 layouts at M=20480 on all four ranks. Source-audited caller uses the resolved prefill buffer ceiling (or max_prefill_tokens fallback). This confirms startup tuning size, not admitted batches, actual workspace bytes or throughput. Await warmup and the complete replay.",
+        "R6 scheduler receipts resolve chunk/input20480 and maxrunning96 on all ranks, but max_total_num_tokens falls from17661184 to17545472 (-0.6552%) at unchanged mem_fraction_static. Preserve measured capacity; workspace/activation sizing and new-node state are possible contributors, not an isolated cause."
       ]
     },
     {
