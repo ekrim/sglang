@@ -190,6 +190,8 @@ def cuda_allocator_snapshot(cuda=None):
     Native PyTorch allocator scope only: private/custom pools and external
     allocations may be excluded. Reserved minus allocated is not a promise of
     reclaimable memory. Retry/OOM counters are cumulative, not window counts.
+    Optional peaks share this one stats read and are since the last allocator
+    peak reset by any caller, not this observation window or necessarily launch.
     """
     if cuda is None:
         import torch
@@ -215,11 +217,25 @@ def cuda_allocator_snapshot(cuda=None):
         for name, key in keys.items()
         if type(stats.get(key)) is int and stats[key] >= 0
     }
-    return {
+    result = {
         "status": "ok" if len(values) == len(keys) else "partial",
         "backend": "native",
         "values": values,
     }
+    peak_keys = {
+        name: key.removesuffix(".current") + ".peak"
+        for name, key in keys.items() if key.endswith(".current")
+    }
+    peaks = {
+        name: stats[key] for name, key in peak_keys.items()
+        if type(stats.get(key)) is int and stats[key] >= 0
+    }
+    if peaks:
+        result["peaks"] = {
+            "scope": "native_allocator_since_last_peak_reset",
+            "values": peaks,
+        }
+    return result
 
 
 def log_mega_moe_buffer(buffer, *, requested_token_cap, group_size, num_sms):

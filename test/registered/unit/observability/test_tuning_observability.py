@@ -185,6 +185,33 @@ class AllocatorSnapshotTest(unittest.TestCase):
         self.assertEqual(result["status"], "partial")
         self.assertEqual(result["values"], {"active_bytes": 110, "inactive_split_bytes": 30})
 
+    def test_peaks_share_one_read_and_preserve_reset_scope(self):
+        values = {
+            "allocated_bytes.all.current": 100,
+            "allocated_bytes.all.peak": 180,
+            "reserved_bytes.all.peak": 250,
+            "active_bytes.all.peak": True,
+            "inactive_split_bytes.all.peak": -1,
+        }
+        stats = Mock(side_effect=lambda: dict(values))
+        cuda = NS(is_initialized=lambda: True,
+                  memory=NS(get_allocator_backend=lambda: "native"),
+                  memory_stats=stats)
+        first = tuning.cuda_allocator_snapshot(cuda)
+        stats.assert_called_once_with()
+        self.assertEqual(first["peaks"], {
+            "scope": "native_allocator_since_last_peak_reset",
+            "values": {"allocated_bytes": 180, "reserved_bytes": 250},
+        })
+        # A reset by another caller is observable; the sampler must not hide it
+        # behind its own maximum or mislabel it a process-lifetime peak.
+        values["allocated_bytes.all.peak"] = 100
+        second = tuning.cuda_allocator_snapshot(cuda)
+        self.assertEqual(second["peaks"]["values"]["allocated_bytes"], 100)
+        self.assertEqual(first["peaks"]["values"]["allocated_bytes"], 180)
+        values.clear()
+        self.assertNotIn("peaks", tuning.cuda_allocator_snapshot(cuda))
+
 
 class MoEBufferReceiptTest(unittest.TestCase):
     def test_only_cache_misses_emit_and_buffer_identity_is_unchanged(self):

@@ -172,3 +172,12 @@ The receipt reads existing CPU metadata: requested and aligned token caps, proce
 ## Proposed policy diagnostics
 
 [POLICY_DIAGNOSTICS.md](POLICY_DIAGNOSTICS.md) specifies the remaining queue-age/readiness/continuation gap. It is a design, not emitted telemetry. Sorting precedes admission readiness; current queue-episode age, HRRN submitted-token age and first-forward histogram populations must stay distinct. The source-audited policy costs also differ for output-bearing requests; that synthetic possibility does not establish workload incidence.
+
+
+### Optional native allocator peaks (prepared after R10 freeze)
+
+The allocator snapshot can also retain `peaks.values` for allocated, reserved, active and inactive-split bytes from the existing stats read. These are high-water counters **since the last peak reset by any caller**, not per-window peaks or necessarily process-lifetime peaks. Current values stay separate. Missing optional fields remain absent; the core snapshot status does not turn partial merely because a peak field is missing. Distinct maxima can occur at different times and must not be summed.
+
+Semantics follow [PyTorch 2.14 memory_stats](https://docs.pytorch.org/docs/2.14/generated/torch.cuda.memory.memory_stats.html) and [reset_peak_memory_stats](https://docs.pytorch.org/docs/2.14/generated/torch.cuda.memory.reset_peak_memory_stats.html). Local optional graph-pool sizing and DFlash measurement can reset counters; the observer adds no reset, sync, initialization or second stats call. A sampled decrease indicates a reset/change, but sampling can miss resets.
+
+This closes part of the sampled-endpoint gap for native allocations only. External/private scope and physical peaks remain separate questions.32CPUcontracts pass; pinned-image GPU API/release-retention checks and all-rank serving coverage are pending a later deployment. R10 remains frozen without these fields.
