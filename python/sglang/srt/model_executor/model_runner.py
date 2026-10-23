@@ -462,10 +462,19 @@ class ModelRunner:
         # Stored for later use by alloc_memory_pool().
         self.init_torch_distributed()
         if not self.is_draft_worker:
-            from sglang.srt.observability.tuning import configure
+            from sglang.srt.observability.tuning import (
+                configure,
+                cuda_allocator_snapshot,
+            )
 
             configure(
                 get_observability().tuning_observation_interval,
+                allocator_sampler=(
+                    cuda_allocator_snapshot
+                    if self.device == "cuda"
+                    and envs.SGLANG_TUNING_CUDA_ALLOCATOR_STATS.get()
+                    else None
+                ),
                 tp_rank=get_parallel().tp_rank,
                 pp_rank=get_parallel().pp_rank,
                 dp_rank=get_parallel().dp_rank,

@@ -368,6 +368,30 @@
         "First30min retained windows (~1600s counter coverage): C256 interval24 has16166 first-forward observations and3 waits>300s; C384 interval24 has19419 and59; C384 interval18 has19699 and84. These are observation-time cohorts, not matched requests or full1800s totals. C384 interval24 is unqualified after finalization loss.",
         "Final C384 interval18 TTFTp99 is58.508s, maximum2561.266s;128drain cancellations remain separately accounted. Queue-age observations establish delayed admission but do not isolate ordering from budget/readiness. The next selected test addresses compute budget; an aging-policy experiment remains an alternative."
       ]
+    },
+    {
+      "id": "allocator-pressure-versus-pool-capacity",
+      "graph_nodes": [
+        "mechanism.kv_memory",
+        "mechanism.measurement",
+        "log.cuda_allocator_snapshot",
+        "config.SGLANG_TUNING_CUDA_ALLOCATOR_STATS"
+      ],
+      "observation": "GPU management snapshots show very little free memory, possibly without corresponding KV admission failures.",
+      "diagnosis": "Physical usage is not decomposed by logical KV utilization or the configured static fraction. Live tensors, reserved allocator blocks, graph/private pools and external symmetric buffers are competing contributors.",
+      "alternatives": [
+        "A large reserved footprint may coexist with reusable blocks; reserved minus allocated is not guaranteed reclaimable.",
+        "PyTorch stats may exclude custom/private pools and external library allocations.",
+        "Request shape, startup history and lazy capture differ across ranks and runs."
+      ],
+      "check": "Retain timestamped GPU samples and resolved pool capacities. On a later validated deployment, enable the optional native-allocator snapshot and inspect allocated/reserved/active bytes plus same-process retry/OOM counter deltas. Unsupported, missing and error statuses remain unknown. Use actual buffer-creation receipts for external allocation provenance.",
+      "action": "Keep an active benchmark unchanged. If an actual allocation failure occurs, preserve it and choose one memory-headroom intervention for a fresh trial. When memory provenance is ambiguous, validate and enable bounded allocator/buffer receipts in a separate instrumentation trial before attributing low free memory to a particular config. Never flush caches or reset peaks in a live comparison to manufacture headroom.",
+      "expected": "Allocator snapshots distinguish supported native allocator counters from unknown external/pool contributions; a later headroom intervention should reduce actual allocation failures without an unacceptable capacity/throughput loss.",
+      "reject_if": "Snapshot coverage/backend is unknown, observation changes behavior materially, or only a reserved-memory subtraction supports the claimed cause.",
+      "status": "Sampler implemented and CPU-tested for future deployment; R6 remains on frozen source without it; GPU integration and overhead validation pending",
+      "runtime_evidence": [
+        "R6 warmup reported rank2 free193/141/117/43MiB at management samples while requests continued without reported errors. Later free space recovered on rank2 while rank0 approached41MiB. These snapshots alone do not prove OOM or isolate live versus reserved memory."
+      ]
     }
   ],
   "policy": {

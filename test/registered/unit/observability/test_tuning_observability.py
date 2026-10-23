@@ -108,6 +108,82 @@ class RecorderTest(unittest.TestCase):
                 tuning.TuningRecorder(v)
 
 
+class AllocatorSnapshotTest(unittest.TestCase):
+    def test_disabled_and_empty_windows_never_sample(self):
+        sampler = Mock(side_effect=AssertionError("must not sample"))
+        recorder = tuning.TuningRecorder(allocator_sampler=sampler)
+        recorder.observe("prefill.input_budget")
+        recorder.flush()
+        tuning.TuningRecorder(10, allocator_sampler=sampler).flush()
+        sampler.assert_not_called()
+
+    def test_once_per_flush_and_diagnostic_failure_preserves_events(self):
+        now, records = [0.0], []
+        sampler = Mock(side_effect=[{"status": "not_initialized"}, RuntimeError])
+        recorder = tuning.TuningRecorder(
+            10, clock=lambda: now[0], emit=records.append,
+            allocator_sampler=sampler,
+        )
+        for _ in range(20):
+            recorder.observe("prefill.input_budget")
+        sampler.assert_not_called()
+        now[0] = 10
+        recorder.observe("prefill.input_budget")
+        self.assertEqual(sampler.call_count, 1)
+        self.assertEqual(records[0]["events"][0]["observations"], 21)
+        self.assertEqual(records[0]["allocator_snapshot"], {"status": "not_initialized"})
+        recorder.flush()
+        self.assertEqual(sampler.call_count, 1)
+        now[0] = 20
+        recorder.observe("prefill.chunk_budget")
+        self.assertEqual(sampler.call_count, 2)
+        self.assertEqual(records[1]["allocator_snapshot"], {"status": "error"})
+        self.assertEqual(records[1]["events"][0]["event"], "prefill.chunk_budget")
+        self.assertFalse(recorder.counts)
+        self.assertEqual(json.loads(json.dumps(records)), records)
+
+    def test_uninitialized_or_unsupported_never_reads_stats(self):
+        stats = Mock(side_effect=AssertionError("must not read"))
+        backend = Mock(side_effect=AssertionError("must not inspect backend"))
+        cuda = NS(is_initialized=lambda: False, memory_stats=stats,
+                  memory=NS(get_allocator_backend=backend))
+        self.assertEqual(tuning.cuda_allocator_snapshot(cuda), {"status": "not_initialized"})
+        backend.assert_not_called()
+        cuda.is_initialized = lambda: True
+        cuda.memory.get_allocator_backend = lambda: "cudaMallocAsync"
+        self.assertEqual(tuning.cuda_allocator_snapshot(cuda), {"status": "unsupported_backend"})
+        stats.assert_not_called()
+
+    def test_native_snapshot_units_counters_and_missing_values(self):
+        values = {
+            "allocated_bytes.all.current": 100,
+            "reserved_bytes.all.current": 200,
+            "active_bytes.all.current": 110,
+            "inactive_split_bytes.all.current": 30,
+            "num_alloc_retries": 4,
+            "num_ooms": 0,
+            "unrelated.dynamic.key": 999,
+        }
+        # Deliberately expose no init/synchronize/empty_cache/reset methods.
+        cuda = NS(is_initialized=lambda: True,
+                  memory=NS(get_allocator_backend=lambda: "native"),
+                  memory_stats=lambda: values)
+        result = tuning.cuda_allocator_snapshot(cuda)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["values"], {
+            "allocated_bytes": 100, "reserved_bytes": 200,
+            "active_bytes": 110, "inactive_split_bytes": 30,
+            "allocation_retries_total": 4, "ooms_total": 0,
+        })
+        del values["allocated_bytes.all.current"]
+        values["reserved_bytes.all.current"] = -1
+        values["num_alloc_retries"] = float("nan")
+        values["num_ooms"] = True
+        result = tuning.cuda_allocator_snapshot(cuda)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["values"], {"active_bytes": 110, "inactive_split_bytes": 30})
+
+
 class BudgetTest(unittest.TestCase):
     def setup_budget(self, enabled, cls="PrefillBudget", full=100, swa=100):
         r = tuning.TuningRecorder(1000 if enabled else 0)

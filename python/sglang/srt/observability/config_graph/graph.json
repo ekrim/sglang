@@ -3203,6 +3203,26 @@
           "anchor": "def max_prefill_buffer_tokens()"
         }
       ]
+    },
+    {
+      "id": "config.SGLANG_TUNING_CUDA_ALLOCATOR_STATS",
+      "name": "SGLANG_TUNING_CUDA_ALLOCATOR_STATS",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_TUNING_CUDA_ALLOCATOR_STATS"
+      }
+    },
+    {
+      "id": "log.cuda_allocator_snapshot",
+      "kind": "log_line",
+      "name": "Optional allocator_snapshot in tuning_observation",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "record[\"allocator_snapshot\"] = self.allocator_sampler()"
+      },
+      "availability": "Implemented for a future deployment; CPU contracts verified, actual GPU behavior/overhead not yet validated. Requires CUDA target runner, positive tuning observation interval and SGLANG_TUNING_CUDA_ALLOCATOR_STATS=1. One snapshot per nonempty event-driven flush; absent by default.",
+      "interpretation": "Native PyTorch CPU-side allocator counters at the emission endpoint: allocated/reserved/active/inactive-split bytes and cumulative allocation-retry/OOM counts. Not a window mean, peak or heartbeat. Status not_initialized/unsupported_backend/error has no values; partial omits unavailable/invalid fields instead of inventing zeros. Private/custom pools and external allocations may be excluded. Reserved-minus-allocated is not guaranteed reclaimable memory. Counter deltas require same process/rank and reset handling. No initialization, device sync, cache clearing or peak reset is requested by the sampler."
     }
   ],
   "edges": [
@@ -4686,6 +4706,21 @@
     {
       "source": "mechanism.prefill_tokens",
       "target": "log.dsv41_prefill_autotune",
+      "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "config.SGLANG_TUNING_CUDA_ALLOCATOR_STATS",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "log.cuda_allocator_snapshot",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "log.cuda_allocator_snapshot",
       "relation": "indirectly_observed_by"
     }
   ]

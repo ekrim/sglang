@@ -21,7 +21,15 @@ logger = logging.getLogger(__name__)
 
 
 class TuningRecorder:
-    def __init__(self, interval=0.0, context=None, *, clock=time.monotonic, emit=None):
+    def __init__(
+        self,
+        interval=0.0,
+        context=None,
+        *,
+        clock=time.monotonic,
+        emit=None,
+        allocator_sampler=None,
+    ):
         if not math.isfinite(interval) or interval < 0:
             raise ValueError(
                 "tuning observation interval must be finite and nonnegative"
@@ -31,6 +39,7 @@ class TuningRecorder:
         self.context = dict(context or {})
         self.clock = clock
         self.emit = emit or self._log
+        self.allocator_sampler = allocator_sampler
         self.start = clock() if self.enabled else 0.0
         self.counts = Counter()
         self.samples = {}
@@ -71,28 +80,36 @@ class TuningRecorder:
         if not self.enabled or not self.counts:
             return
         now = self.clock() if now is None else now
-        self.emit(
-            dict(
-                schema_version=1,
-                context=self.context,
-                emitted_at_unix=time.time(),
-                window_start_monotonic=self.start,
-                window_end_monotonic=now,
-                window_seconds=now - self.start,
-                events=[
-                    dict(
-                        event=event,
-                        observations=count,
-                        values={
-                            field: summary
-                            for (key, field), summary in self.samples.items()
-                            if key == event
-                        },
-                    )
-                    for event, count in sorted(self.counts.items())
-                ],
-            )
+        record = dict(
+            schema_version=1,
+            context=self.context,
+            emitted_at_unix=time.time(),
+            window_start_monotonic=self.start,
+            window_end_monotonic=now,
+            window_seconds=now - self.start,
+            events=[
+                dict(
+                    event=event,
+                    observations=count,
+                    values={
+                        field: summary
+                        for (key, field), summary in self.samples.items()
+                        if key == event
+                    },
+                )
+                for event, count in sorted(self.counts.items())
+            ],
         )
+        # One endpoint sample per emitted window, never per observed event.
+        # It is not a window mean/peak and is absent when not requested.
+        if self.allocator_sampler is not None:
+            try:
+                record["allocator_snapshot"] = self.allocator_sampler()
+            except Exception:
+                # Optional diagnostics must not turn an API/backend mismatch
+                # into a serving failure. Never serialize exception contents.
+                record["allocator_snapshot"] = {"status": "error"}
+        self.emit(record)
         self.counts.clear()
         self.samples.clear()
         self.start = now
@@ -167,8 +184,48 @@ recorder = TuningRecorder()
 atexit.register(recorder.flush)
 
 
-def configure(interval, **context):
+def cuda_allocator_snapshot(cuda=None):
+    """Read CPU-side allocator counters without init, sync, flush or peak reset.
+
+    Native PyTorch allocator scope only: private/custom pools and external
+    allocations may be excluded. Reserved minus allocated is not a promise of
+    reclaimable memory. Retry/OOM counters are cumulative, not window counts.
+    """
+    if cuda is None:
+        import torch
+
+        cuda = torch.cuda
+    if not cuda.is_initialized():
+        return {"status": "not_initialized"}
+    backend = cuda.memory.get_allocator_backend()
+    if backend != "native":
+        # cudaMallocAsync does not give meaningful values for all these stats.
+        return {"status": "unsupported_backend"}
+    stats = cuda.memory_stats()
+    keys = {
+        "allocated_bytes": "allocated_bytes.all.current",
+        "reserved_bytes": "reserved_bytes.all.current",
+        "active_bytes": "active_bytes.all.current",
+        "inactive_split_bytes": "inactive_split_bytes.all.current",
+        "allocation_retries_total": "num_alloc_retries",
+        "ooms_total": "num_ooms",
+    }
+    values = {
+        name: stats[key]
+        for name, key in keys.items()
+        if type(stats.get(key)) is int and stats[key] >= 0
+    }
+    return {
+        "status": "ok" if len(values) == len(keys) else "partial",
+        "backend": "native",
+        "values": values,
+    }
+
+
+def configure(interval, *, allocator_sampler=None, **context):
     # Preserve object identity: call sites import this single object.
     recorder.__init__(
-        interval, dict(host=socket.gethostname(), pid=os.getpid(), **context)
+        interval,
+        dict(host=socket.gethostname(), pid=os.getpid(), **context),
+        allocator_sampler=allocator_sampler,
     )
