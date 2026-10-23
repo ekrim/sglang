@@ -83,7 +83,7 @@
       "action": "Raise only the binding per-rank admission cap in a bounded trial; account for graph and request-pool memory.",
       "expected": "More active work, if another gate does not replace this one.",
       "reject_if": "KV gates/retractions immediately replace the row gate or latency worsens without useful throughput.",
-      "status": "No row-cap case established in retained full baseline/reference or first45min of R6; sampled R6 active maximum56/rank versus96 cap, with earlier-gate masking caveat",
+      "status": "No row-cap case established in retained full baseline/reference or first45min of R6; sampled R6 active maximum58/rank versus96 cap, with earlier-gate masking caveat",
       "runtime_evidence": [
         "Fullbaseline sampledmax40running/rank versusresolved96cap; no request-row gate in retained emission windows. Increasing max_running_requests is not supported by these observations."
       ]
