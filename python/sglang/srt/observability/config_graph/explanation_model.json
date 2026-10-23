@@ -518,6 +518,28 @@
       "runtime_evidence": [
         "R6/R8b/R9 show a prefill/decode scheduling tradeoff, making topology a candidate to investigate if aggregate tuning plateaus. Local source explicitly rejects TRT-LLM PD; this prevents a one-flag conversion or an isolated topology claim. No PD result exists."
       ]
+    },
+    {
+      "id": "dsv41-mega-mhc-candidate",
+      "graph_nodes": [
+        "config.SGLANG_OPT_DSV41_MEGA_MHC_PREFILL",
+        "mechanism.dsv41_mega_mhc_dispatch"
+      ],
+      "observation": "The launch flag is disabled, or enabled without any distinct serving branch receipt.",
+      "diagnosis": "Fusion is a candidate mechanism, but launch settings alone do not establish eligibility, execution incidence, correctness or benefit.",
+      "alternatives": [
+        "Collective planning or a missing/incompatible next boundary prevents dispatch.",
+        "The pinned library lacks the required API or fails numeric/capture checks.",
+        "Fusion is reached but does not dominate the measured workload; optional quantization or decode paths change the tradeoff."
+      ],
+      "check": "Trace the reached branch, mode and shape. Validate checkpoint-weight shifted ordering, BF16 rounding, next statistics, optional MXFP8 output and per-stream warmup/capture on the pinned GPU library. Keep synthetic correctness separate from actual model quality and serving selection.",
+      "action": "Use a bounded idle compatibility probe before selecting a performance run. Add bounded branch evidence if no existing signal distinguishes selection, and retain full AgentX measurement with R6 load/cap/budget/cadence as the reference.",
+      "expected": "A compatible kernel passes numerical and capture checks; actual selection receipts and full replay then test whether useful service and canonical throughput improve.",
+      "reject_if": "Numeric/API/capture checks fail, actual serving selection cannot be established, or the full candidate regresses the intended throughput/latency objective.",
+      "status": "Source audit; GPU probe pending. No selected full performance experiment and no speedup claim.",
+      "runtime_evidence": [
+        "Job3443116 submitted on GB200 using frozen executable5e70162. Probe covers synthetic layer0 attention-to-FFN weights, fifteen shape/device/quantization cases; it does not cover every seam or real activation distribution."
+      ]
     }
   ],
   "policy": {

@@ -3513,6 +3513,53 @@
       },
       "availability": "DeepSeek V4 byte-budget pool sizing at startup; emitted per worker in calculate_pool_sizes. Explicit token sizing and other model/pool paths need not emit this log.",
       "interpretation": "Reports sizing mode, byte coefficient, available budget, fixed state/SWA components and aligned FULL token capacity. GB-labeled values are rounded after division by2^30, not physical allocator measurements; cross-check final scheduler/pool limits and rank completeness."
+    },
+    {
+      "id": "config.SGLANG_OPT_DSV41_MEGA_MHC_PREFILL",
+      "name": "SGLANG_OPT_DSV41_MEGA_MHC_PREFILL",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_OPT_DSV41_MEGA_MHC_PREFILL"
+      }
+    },
+    {
+      "id": "mechanism.dsv41_mega_mhc_dispatch",
+      "kind": "mechanism",
+      "title": "Shifted mHC fused boundary dispatch",
+      "source": {
+        "path": "python/sglang/srt/models/deepseek_v4_mhc.py",
+        "anchor": "def _post_fusion("
+      },
+      "behavior": "On a reached post-fusion seam, Mega mHC combines residual update, carried-pre collapse, RMSNorm and next HC statistics. The branch requires a next boundary with fusable norm and HC, the environment flag, SM100, no context-parallel prefill and positive rows. It precedes the alternate wide-row fused post/combine branch.",
+      "conditions": [
+        "Actual HcUpdate post must reach this helper through the shifted-HC path; collective and boundary planning can route elsewhere.",
+        "Optional MXFP8 output additionally requires next.accepts_mxfp8_deepgemm and fused_mxfp8_rows: positive rows<=2048, not extend-in-batch and not sequence parallel."
+      ],
+      "confounders": [
+        "The flag name does not restrict this predicate to prefill. Decode or verification may be affected.",
+        "The attention-DP==1 condition in can_fuse_post and the alternate wide-row branch is not a direct Mega mHC gate; surrounding collective planning remains relevant.",
+        "Engram or cross-layer boundary policy can remove the next boundary. An enabled flag and compatible synthetic kernel do not prove actual serving selection.",
+        "Python inside captured model execution observes capture or eager calls, not graph replay frequency."
+      ],
+      "hypothesis": "If eligible boundary work is significant, fusion may improve service at the retained R6 configuration. Compatibility, incidence and speedup are unproven.",
+      "next_test": "Validate pinned DeepGEMM API, checkpoint-weight numerics including optional quantized output, same-stream capture warmup and replay with changed data on idle GPUs. Then establish bounded actual branch evidence and use a full canonical replay for any selected candidate.",
+      "remaining_gap": "No distinct executed-branch receipt in this path. Need bounded selected-path/mode/row/quantization evidence with explicit capture semantics; elapsed kernel cost and replay incidence require separate evidence.",
+      "evidence": "Source audit at5e70162; idle GPU probe submitted as campaign job3443116, no result yet.",
+      "source_audit": [
+        {
+          "path": "python/sglang/srt/models/deepseek_v4_mhc.py",
+          "anchor": "def fused_mxfp8_rows("
+        },
+        {
+          "path": "python/sglang/srt/models/deepseek_v4_boundary.py",
+          "anchor": "class HcUpdate:"
+        },
+        {
+          "path": "python/sglang/kernels/ops/layernorm/mhc_mega.py",
+          "anchor": "def mhc_mega_boundary("
+        }
+      ]
     }
   ],
   "edges": [
@@ -5187,6 +5234,11 @@
       "source": "mechanism.dsv4_request_pool_sizing",
       "target": "metric.max_total_num_tokens",
       "relation": "observed_by"
+    },
+    {
+      "source": "config.SGLANG_OPT_DSV41_MEGA_MHC_PREFILL",
+      "target": "mechanism.dsv41_mega_mhc_dispatch",
+      "relation": "controls_or_constrains"
     }
   ]
 }
