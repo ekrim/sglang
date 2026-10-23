@@ -453,6 +453,31 @@
       "runtime_evidence": [
         "R8b rank2 waited in cargo --version --verbose via /root/.cargo/bin/rustup. Exact verified child was terminated before traffic at08:13:43UTC; rank2 emitted PIL fallback and all ranks reached weight loading at08:13:45. Historical R6/R7 logs also report PIL fallback."
       ]
+    },
+    {
+      "id": "model-backend-topology-compatibility",
+      "graph_nodes": [
+        "mechanism.dsv41_execution_compatibility",
+        "config.dsv4_attn_backend",
+        "config.disaggregation_mode",
+        "config.cuda_graph_backend_prefill",
+        "log.dsv41_trtllm_pd_rejected",
+        "log.dsv41_trtllm_prefill_graph_rejected"
+      ],
+      "observation": "Startup reports an unsupported backend/PD/graph combination before benchmark traffic.",
+      "diagnosis": "The model-specific compatibility checks reject the configuration; this is not evidence of insufficient queue capacity or memory.",
+      "alternatives": [
+        "Generic parser acceptance can precede model-specific rejection.",
+        "Changing an attention backend also changes kernel/layout behavior; topology is not the only intervention."
+      ],
+      "check": "Read the exact validator and resolved model/backend/role/graph settings. Distinguish startup selection receipts from executed-forward telemetry.",
+      "action": "Choose a supported configuration and validate target/draft layout plus functional transfer before a PD performance trial. Do not suppress the assertion. Preserve every serving GPU in the denominator.",
+      "expected": "A compatible configuration passes startup validation; correctness and throughput remain separate tests.",
+      "reject_if": "Model validation, target/draft KV agreement, transfer correctness or canonical replay fails.",
+      "status": "Source audit only; current TRT-LLM aggregated recipe is unchanged. No PD trial selected.",
+      "runtime_evidence": [
+        "R6/R8b/R9 show a prefill/decode scheduling tradeoff, making topology a candidate to investigate if aggregate tuning plateaus. Local source explicitly rejects TRT-LLM PD; this prevents a one-flag conversion or an isolated topology claim. No PD result exists."
+      ]
     }
   ],
   "policy": {

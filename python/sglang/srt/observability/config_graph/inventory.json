@@ -192,7 +192,7 @@
         "anchor": "disaggregation_mode:"
       },
       "declared_default": "'null'",
-      "review_status": "not_causally_audited"
+      "review_status": "causal_mapping"
     },
     {
       "id": "config.disaggregation_decode_allocation_policy",
@@ -984,7 +984,7 @@
         "anchor": "dsv4_attn_backend:"
       },
       "declared_default": "'auto'",
-      "review_status": "not_causally_audited"
+      "review_status": "causal_mapping"
     },
     {
       "id": "config.dsa_paged_mqa_logits_backend",

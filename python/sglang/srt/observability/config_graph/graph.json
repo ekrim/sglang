@@ -3351,6 +3351,99 @@
       },
       "availability": "Warning when auto backend catches an extension loading failure. Not emitted while a version query is still blocked or when PIL is explicitly selected.",
       "interpretation": "Establishes PIL fallback for that construction instance. Its absence does not prove Rust selection, success, or progress."
+    },
+    {
+      "id": "config.dsv4_attn_backend",
+      "name": "dsv4_attn_backend",
+      "kind": "server_field",
+      "cli_candidate": "--dsv4-attn-backend",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+        "anchor": "dsv4_attn_backend:"
+      },
+      "declared_default": "'auto'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.disaggregation_mode",
+      "name": "disaggregation_mode",
+      "kind": "server_field",
+      "cli_candidate": "--disaggregation-mode",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+        "anchor": "disaggregation_mode:"
+      },
+      "declared_default": "'null'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "mechanism.dsv41_execution_compatibility",
+      "kind": "mechanism",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
+        "anchor": "def validate_deepseek_v41_features"
+      },
+      "behavior": "Startup validation constrains the attention backend, disaggregation role, speculative mode and prefill graph backend before traffic. Current TRT-LLM requires aggregated mode and chunked prefill; DeepSeekV4.1 accepts only disabled or breakable prefill graphs.",
+      "conditions": [
+        "DeepSeekV4.1 model resolution",
+        "TRT-LLM attention requires CUDA SM100/SM103, FP8 KV, no context parallelism/HiSparse, disaggregation_mode=null and positive chunk size.",
+        "DSpark PD with another supported attention backend requires static verify, Mooncake/NIXL, DCP1 and CP1 on decode; supported prefill CP is interleave."
+      ],
+      "confounders": [
+        "A parser accepting individual flags does not establish model-specific validation or serving support.",
+        "Changing attention backend can change KV layout, kernel dispatch and memory; a PD comparison cannot isolate topology alone.",
+        "Successful startup does not establish transfer correctness or performance."
+      ],
+      "hypothesis": "If startup rejects a combination before weights/traffic, it is a compatibility constraint rather than a measured scheduler/resource bottleneck.",
+      "next_test": "Before a prospective PD trial, construct a supported role/backend configuration and validate target/draft KV agreement and transfer correctness on the pinned image; retain whole-system GPU denominator.",
+      "remaining_gap": "No PD launch or performance validation in this campaign; current R10 remains aggregated. Kernel dispatch/critical-path cost cannot be inferred from backend selection alone.",
+      "evidence": [
+        {
+          "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
+          "anchor": "assert cfg.disaggregation_mode == \"null\""
+        },
+        {
+          "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
+          "anchor": "DeepSeek-V4.1 DSpark PD requires static verify"
+        },
+        {
+          "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
+          "anchor": "DeepSeek-V4.1 TRT-LLM requires --cuda-graph-backend-prefill"
+        }
+      ]
+    },
+    {
+      "id": "log.dsv41_trtllm_selected",
+      "kind": "log_line",
+      "name": "DeepSeek V4 attention: trtllm backend enabled",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
+        "anchor": "DeepSeek V4 attention: trtllm backend enabled"
+      },
+      "availability": "Existing startup INFO after backend-specific checks; campaign recipe uses TRT-LLM.",
+      "interpretation": "Confirms selected uniform-FP8 KV/decode+sparse-prefill backend; not proof that every later forward used a particular kernel or achieved speedup."
+    },
+    {
+      "id": "log.dsv41_trtllm_pd_rejected",
+      "kind": "log_line",
+      "name": "TRT-LLM PD disaggregation assertion",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
+        "anchor": "--dsv4-attn-backend trtllm does not support PD disaggregation yet"
+      },
+      "availability": "Existing startup assertion when TRT-LLM is combined with a non-null PD role; source-audited, not deliberately triggered on reserved hardware.",
+      "interpretation": "Unsupported combination in this revision; do not suppress validation or treat it as a capacity failure."
+    },
+    {
+      "id": "log.dsv41_trtllm_prefill_graph_rejected",
+      "kind": "log_line",
+      "name": "TRT-LLM prefill graph backend rejection",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
+        "anchor": "DeepSeek-V4.1 TRT-LLM requires --cuda-graph-backend-prefill"
+      },
+      "availability": "Existing model-validation ValueError for prefill graph backends other than disabled/breakable; source-audited.",
+      "interpretation": "Compatibility constraint, not a measured graph fallback or performance diagnosis."
     }
   ],
   "edges": [
@@ -4909,6 +5002,41 @@
     {
       "source": "mechanism.optional_image_backend_probe",
       "target": "log.image_backend_fallback",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.dsv4_attn_backend",
+      "target": "mechanism.dsv41_execution_compatibility",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.disaggregation_mode",
+      "target": "mechanism.dsv41_execution_compatibility",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.cuda_graph_backend_prefill",
+      "target": "mechanism.dsv41_execution_compatibility",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.chunked_prefill_size",
+      "target": "mechanism.dsv41_execution_compatibility",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.dsv41_execution_compatibility",
+      "target": "log.dsv41_trtllm_selected",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.dsv41_execution_compatibility",
+      "target": "log.dsv41_trtllm_pd_rejected",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.dsv41_execution_compatibility",
+      "target": "log.dsv41_trtllm_prefill_graph_rejected",
       "relation": "observed_by"
     }
   ]
