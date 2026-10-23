@@ -3120,7 +3120,7 @@
         "anchor": "image_processor_backend:"
       },
       "declared_default": "'auto'",
-      "review_status": "not_causally_audited"
+      "review_status": "causal_mapping"
     },
     {
       "id": "config.mm_global_cache_backend",

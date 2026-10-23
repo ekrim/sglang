@@ -3294,6 +3294,61 @@
         "anchor": "tuning_policy_config"
       },
       "semantics": "Once per policy construction when tuning or policy sampling is enabled: resolved policy, sampling interval and supported status; allocator and MegaMoE flags are requested settings, not proof of successful emission or complete pool coverage."
+    },
+    {
+      "id": "config.image_processor_backend",
+      "name": "image_processor_backend",
+      "kind": "server_field",
+      "cli_candidate": "--image-processor-backend",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/fields/mm.py",
+        "anchor": "image_processor_backend:"
+      },
+      "declared_default": "'auto'",
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "mechanism.optional_image_backend_probe",
+      "kind": "mechanism",
+      "title": "Optional image backend selection can block text-server startup",
+      "source": {
+        "path": "python/sglang/srt/multimodal/processors/deepseek_v41.py",
+        "anchor": "elif backend == \"auto\":"
+      },
+      "behavior": "Auto selection tries the Rust multimodal extension before falling back to PIL on a caught loader failure. Extension fingerprinting calls cargo/rustc version subprocesses without a timeout; a Rustup shim may block on toolchain setup. Explicit PIL skips this optional extension probe.",
+      "conditions": [
+        "DeepSeek V4.1 processor construction with auto backend; bundled/cached extension availability and source checkout affect loader behavior."
+      ],
+      "confounders": [
+        "A quiet startup log alone does not identify this cause. Other ranks may wait downstream; inspect the actual child command and source path.",
+        "Rust build mode never does not guarantee no toolchain query: when no bundled extension is returned, fingerprinting precedes the later never-mode rejection.",
+        "Image preprocessing backends affect image inputs and cache fingerprints. Do not assume their equivalence for multimodal workloads."
+      ],
+      "hypothesis": "If startup is blocked in the optional toolchain query, selecting the already observed PIL fallback explicitly should remove that dependency without changing the text-only replay.",
+      "next_test": "For the next fresh text-only launch, declare --image-processor-backend pil; verify CLI acceptance, resolved backend and absence of this optional probe. Keep performance controls and canonical workload fixed.",
+      "remaining_gap": "The optional version probe has no bounded timeout or begin/end receipt. A fallback warning appears only after failure, so absent output is ambiguous. No new producer implemented.",
+      "evidence": "R8b rank2 waited in cargo --version --verbose via /root/.cargo/bin/rustup. Exact verified child was terminated before traffic at08:13:43UTC; rank2 emitted PIL fallback and all ranks reached weight loading at08:13:45. Historical R6/R7 logs also report PIL fallback.",
+      "source_audit": [
+        {
+          "path": "python/sglang/srt/rust_extensions/loader.py",
+          "anchor": "def _command_version"
+        },
+        {
+          "path": "python/sglang/srt/rust_extensions/loader.py",
+          "anchor": "context = _build_context("
+        }
+      ]
+    },
+    {
+      "id": "log.image_backend_fallback",
+      "kind": "log_line",
+      "name": "V4.1 Rust image processor fallback",
+      "source": {
+        "path": "python/sglang/srt/multimodal/processors/deepseek_v41.py",
+        "anchor": "V4.1 Rust image processor unavailable; using PIL:"
+      },
+      "availability": "Warning when auto backend catches an extension loading failure. Not emitted while a version query is still blocked or when PIL is explicitly selected.",
+      "interpretation": "Establishes PIL fallback for that construction instance. Its absence does not prove Rust selection, success, or progress."
     }
   ],
   "edges": [
@@ -4837,6 +4892,21 @@
     {
       "source": "config.SGLANG_TUNING_POLICY_INTERVAL",
       "target": "log.policy_producer_config",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.image_processor_backend",
+      "target": "mechanism.optional_image_backend_probe",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_RUST_BUILD_MODE",
+      "target": "mechanism.optional_image_backend_probe",
+      "relation": "interacts_with"
+    },
+    {
+      "source": "mechanism.optional_image_backend_probe",
+      "target": "log.image_backend_fallback",
       "relation": "observed_by"
     }
   ]

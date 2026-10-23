@@ -423,6 +423,28 @@
         "R8 actual serving init produced target/draft exposedbufferbytes7719933824/4049753984 on everyrank,requested20480/aligned21120,shared1. Early native snapshots allstatusok,allocated~153.4GB,reserved~173.9\u2013178.1GB,OOM0. Low physical free memory cannot be attributed solely to live allocation. Reserved gap is not guaranteed reclaimable; await later warmup/full replay and preserve external/private/transient exclusions.",
         "R8 interruption: observer/server/router/client cancelled together at2026-10-23T05:49:12-13UTC, before profiling began. Last warmup4213/4249returned,4218sent,5inflight,0errors. No performance conclusion. Partial artifacts preserved unchanged; R8b uses the same1422f5c executable and full3600s measurement. Serving overhead cannot be isolated from unmatched startup backing and node/cache state."
       ]
+    },
+    {
+      "id": "optional-image-backend-startup",
+      "graph_nodes": [
+        "config.image_processor_backend",
+        "mechanism.optional_image_backend_probe",
+        "log.image_backend_fallback",
+        "config.SGLANG_RUST_BUILD_MODE"
+      ],
+      "observation": "Startup stops before weight loading; some ranks emit PIL fallback but another remains in an optional cargo version subprocess.",
+      "diagnosis": "The optional auto image-backend probe can invoke Rustup toolchain setup. Other ranks may wait for the blocked rank even on a text-only workload.",
+      "alternatives": [
+        "Distributed initialization, weight I/O, compilation, or loader errors can also leave quiet logs; confirm the exact child and source interval."
+      ],
+      "check": "Inspect actual per-rank milestones and the owned cargo child command, parent and executable. Missing fallback warning is unknown, not success. No throughput diagnosis follows from this startup delay.",
+      "action": "On the next fresh text-only deployment, explicitly select --image-processor-backend pil to reproduce the previously observed fallback; verify parser/resolved backend. Do not change a running config. A pre-traffic recovery may terminate only a positively identified stalled optional child to exercise existing fallback, with the intervention recorded.",
+      "expected": "The optional Rust image probe is bypassed and startup reaches weight loading without waiting for toolchain installation. No throughput gain is claimed.",
+      "reject_if": "The stall is elsewhere, PIL is rejected, effective backend differs, or image-input semantics are required and have not been validated.",
+      "status": "R8b pre-traffic recovery verified. Explicit PIL launch is source-supported but not yet deployed or runtime-verified.",
+      "runtime_evidence": [
+        "R8b rank2 waited in cargo --version --verbose via /root/.cargo/bin/rustup. Exact verified child was terminated before traffic at08:13:43UTC; rank2 emitted PIL fallback and all ranks reached weight loading at08:13:45. Historical R6/R7 logs also report PIL fallback."
+      ]
     }
   ],
   "policy": {
