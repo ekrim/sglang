@@ -103,7 +103,7 @@ class PolicyPass:
         self.record.setdefault("continuation", {}).update(
             admitted=bool(admitted), admitted_tokens=req.extend_len if admitted else 0)
 
-    def end(self, cause, *, adder_result=None, candidate_admitted=None):
+    def end(self, cause, *, adder_result=None, candidate_admitted=None, adder_stop_site=None):
         assert cause in {"pass_budget_stop", "request_slots_stop", "adder_result", "queue_scan_exhausted"}
         assert "pass_end" not in self.record
         values = dict(cause=cause)
@@ -112,6 +112,12 @@ class PolicyPass:
             values["adder_result"] = adder_result
         if candidate_admitted is not None:
             values["candidate_admitted"] = bool(candidate_admitted)
+        if cause in {"pass_budget_stop", "adder_result"}:
+            # Return-site metadata only, not re-evaluated readiness or a unique
+            # physical resource. Calls with no recorded site remain unknown.
+            values["adder_stop_site"] = (
+                adder_stop_site if type(adder_stop_site) is str else None
+            )
         self.record["pass_end"] = values
 
     def finish(self, *, scan_complete=False, adder=None):

@@ -4165,12 +4165,20 @@ class Scheduler(
         buffer_pipeline = self.tree_cache.buffer_pipeline
         # Get requests from the waiting queue to a new prefill batch
         for req in self.waiting_queue:
+            if policy_diagnostics is not None:
+                # Only sampled passes retain return-site metadata. Reset before
+                # each evaluated call so prior candidates/probes cannot leak.
+                adder._tuning_capture_stop = True
+                adder._tuning_stop_site = None
             # A spent pass budget admits no one, even before the first
             # candidate: the resumed chunk or mixed decode rows can spend it.
             if adder.budget_state() == AddReqResult.OTHER:
                 if policy_diagnostics is not None:
                     policy_diagnostics.visit(req, "pass_budget_stop")
-                    policy_diagnostics.end("pass_budget_stop")
+                    policy_diagnostics.end(
+                        "pass_budget_stop",
+                        adder_stop_site=vars(adder).get("_tuning_stop_site"),
+                    )
                 break
             if self.enable_lora and not self.can_schedule_lora_req(req, running_loras):
                 if policy_diagnostics is not None:
@@ -4249,6 +4257,8 @@ class Scheduler(
                     if policy_diagnostics is not None:
                         policy_diagnostics.visit(req, "staging_pending")
                     continue
+            if policy_diagnostics is not None:
+                adder._tuning_stop_site = None
             res = adder.add_one_req(
                 req,
                 has_chunked_req=(self.chunked_req is not None),
@@ -4272,6 +4282,7 @@ class Scheduler(
                     policy_diagnostics.end(
                         "adder_result", adder_result=res.name.lower(),
                         candidate_admitted=admitted,
+                        adder_stop_site=vars(adder).get("_tuning_stop_site"),
                     )
                 if res == AddReqResult.NO_TOKEN:
                     # Set batch_is_full after making sure there are requests that can be served

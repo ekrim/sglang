@@ -73,3 +73,14 @@ R9 established that1172of1177sampled adder-result stops followed admission; a si
 
 
 R11 Q2 provides a counterexample to treating OTHER as exhausted input/chunk: one of330sampled OTHER endings retains256tokens in each budget, rejects the final candidate, and has a tracked continuation. The other329OTHER endings and14pre-candidate budget stops co-exhaust both. The one-chunk rule is a source-supported alternative, not a confirmed same-call reason. A future reason receipt should reuse the first predicate actually reached in that add call, without re-evaluating gates; preserve no-reason/legacy unknowns. All344Q2passes carry residuals. Full replay and isolated overhead remain pending.
+
+
+## Returned admission sites (prepared after frozen R11)
+
+`pass_end.adder_stop_site` records which annotated base `PrefillAdder` return branch produced a sampled `pass_budget_stop` or `adder_result` ending. There are26bounded literal sites covering direct OTHER/NO_TOKEN returns. The scheduler enables capture only for a sampled pass and clears the site before each budget check and add-request call. It copies stored metadata into the ending; it does not call a capacity/readiness function again. Admitted-and-stop remains separate from rejected-and-stop. Calls that record no annotated site emit null; older records lack the field and remain unknown. Custom adders that recover from annotated stops require a separate propagation audit; these contracts cover the base adder.
+
+Examples: `pass_input_budget` identifies the ordered input check; with both residuals exhausted this still does not identify input as the only control. `existing_chunk_slot` identifies the SPF one-continuation return despite potentially positive raw token budgets. `chunk_alignment_empty`, `replay_chunk_budget`, `prefill_delayer`, `prefill_request_limit` and load-back sites distinguish other paths. `pass_capacity_or_mamba_slots` and `prefill_shape_capacity` deliberately retain compound scope: no extra inspection is performed to choose a physical pool. Sites are return-branch evidence, not blocked time, unique rejected-request counts or necessarily the first underlying resource failure.
+
+Four new CPU tests execute production budget/shape-selection methods and real sample finalization; paired enabled/disabled cases preserve results and capacity-call counts. A static contract checks all26direct base return sites have literal annotations. The existing production admission-loop test additionally checks an ignored budget NO_TOKEN site cannot leak into an unannotated custom add result. Actual ARM/full serving coverage and isolated overhead are pending. No active R11 executable or historical record has been changed.
+
+All41local observability contracts pass (22tuning,10policy,5graph-baseline,4return-site); this does not replace actual ARM and serving validation.

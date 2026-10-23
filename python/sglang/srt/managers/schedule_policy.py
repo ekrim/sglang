@@ -773,6 +773,8 @@ class PrefillAdder:
         if candidate_metric <= PREFILL_TILE_BUDGET:
             return None
 
+        if getattr(self, "_tuning_capture_stop", False):
+            self._tuning_stop_site = "tile_budget"
         return AddReqResult.OTHER
 
     def _init_dllm_meta(self, dllm_config: DllmConfig):
@@ -870,18 +872,26 @@ class PrefillAdder:
         if not no_token and self.rem_mamba_slots is not None:
             no_token = self.rem_mamba_slots <= 0
         if no_token:
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "pass_capacity_or_mamba_slots"
             return AddReqResult.NO_TOKEN
 
         if self.rem_input_tokens <= 0:
             tuning_recorder.observe("prefill.input_budget")
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "pass_input_budget"
             return AddReqResult.OTHER
 
         if self.dllm_config is not None:
             if self.rem_dllm_tokens <= 0:
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "pass_dllm_budget"
                 return AddReqResult.OTHER
         else:
             if self.rem_chunk_tokens is not None and self.rem_chunk_tokens <= 0:
                 tuning_recorder.observe("prefill.chunk_budget")
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "pass_chunk_budget"
                 return AddReqResult.OTHER
 
         return AddReqResult.CONTINUE
@@ -1095,6 +1105,8 @@ class PrefillAdder:
         _rem_tokens = self._get_dllm_remain_tokens(req)
 
         if _rem_tokens <= 0:
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "dllm_staging_no_remaining"
             return AddReqResult.NO_TOKEN
 
         # Truncate input length to available tokens and update request metadata
@@ -1114,6 +1126,8 @@ class PrefillAdder:
                 and not req.is_dllm_prefill()
             )
         ) and cand_extend_input_len > _rem_tokens:
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "dllm_staging_context_fit"
             return AddReqResult.NO_TOKEN
         truncated = cand_extend_input_len > _rem_tokens
         new_len = min(cand_extend_input_len, _rem_tokens)
@@ -1256,6 +1270,8 @@ class PrefillAdder:
             chunk_limit=self.rem_chunk_tokens,
         )
         if not fits:
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "ignore_eos_prefill_capacity"
             return AddReqResult.NO_TOKEN
 
         def add_req_state(r, insert_sort=False):
@@ -1302,6 +1318,8 @@ class PrefillAdder:
                 min_free_tokens = cur_rem_tokens + tokens_freed - tokens_left * bs
                 # reserve tokens for corner cases
                 if min_free_tokens <= IGNORE_EOS_RESERVE_TOKENS * bs:
+                    if getattr(self, "_tuning_capture_stop", False):
+                        self._tuning_stop_site = "ignore_eos_decode_reserve"
                     return AddReqResult.NO_TOKEN
                 tokens_freed += tokens_occupied
 
@@ -1314,10 +1332,14 @@ class PrefillAdder:
                 waiting_queue_len=self.waiting_queue_len,
             )
         ):
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "ignore_eos_delayer"
             return AddReqResult.OTHER
 
         if self.dllm_config is not None:
             if self.rem_dllm_tokens <= 0:
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "ignore_eos_dllm_budget"
                 return AddReqResult.OTHER
 
             if (
@@ -1340,6 +1362,8 @@ class PrefillAdder:
                 prefix_len=req.prefix_len,
                 extend_len=cand_extend_input_len,
             ):
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "ignore_eos_full_scratch"
                 return AddReqResult.OTHER
             req.extend_end = len(req.full_untruncated_fill_ids)
             self.can_run_list.append(req)
@@ -1353,6 +1377,8 @@ class PrefillAdder:
             )
         else:
             if self.rem_chunk_tokens <= 0:
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "ignore_eos_chunk_budget"
                 return AddReqResult.OTHER
 
             # Chunked prefill
@@ -1363,6 +1389,8 @@ class PrefillAdder:
 
             # Reserve after the tile gate so rejected requests consume no scratch.
             if not self._kv_shard_reserve_scratch(prefix_len=0, extend_len=trunc_len):
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "ignore_eos_chunk_scratch"
                 return AddReqResult.OTHER
 
             assert req.prefix_len == 0
@@ -1397,6 +1425,8 @@ class PrefillAdder:
     ):
         if (x := self.prefill_max_requests) is not None and len(self.can_run_list) >= x:
             tuning_recorder.observe("prefill.request_limit")
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "prefill_request_limit"
             return AddReqResult.OTHER
 
         if req.sampling_params.ignore_eos and getattr(self.tree_cache, "disable", True):
@@ -1423,6 +1453,8 @@ class PrefillAdder:
                     and self.tree_cache.buffer_pipeline is not None
                 ):
                     self.tree_cache.buffer_pipeline.defer_staged_admission(req, "mamba")
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "mamba_slots"
                 return AddReqResult.NO_TOKEN
         request_slot_reserve = self._request_slot_reserve_for_req(req)
         total_tokens += request_slot_reserve
@@ -1454,6 +1486,8 @@ class PrefillAdder:
                 )
             ):
                 tuning_recorder.observe("prefill.delayer")
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "prefill_delayer"
                 return AddReqResult.OTHER
 
             if req.needs_host_load_back():
@@ -1501,6 +1535,8 @@ class PrefillAdder:
                         self._defer_staged_for_capacity_if_idle(
                             req, pool="load_back_budget"
                         )
+                        if getattr(self, "_tuning_capture_stop", False):
+                            self._tuning_stop_site = "load_back_capacity"
                         return AddReqResult.NO_TOKEN
                     promised_host_hit = req.host_hit_length
                     loaded = self.tree_cache.init_load_back(
@@ -1511,6 +1547,8 @@ class PrefillAdder:
                         )
                     )
                 if loaded is None:
+                    if getattr(self, "_tuning_capture_stop", False):
+                        self._tuning_stop_site = "load_back_unavailable"
                     return AddReqResult.OTHER
                 req.host_loaded_length, req.last_node = loaded
                 if 0 < req.host_loaded_length < promised_host_hit:
@@ -1563,6 +1601,8 @@ class PrefillAdder:
             if not self._kv_shard_reserve_scratch(
                 prefix_len=admission.prefix_len, extend_len=admission.extend_len
             ):
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "prefill_scratch"
                 return AddReqResult.OTHER
 
             self._commit_prefill_admission(req, admission, mamba_gap_reserve)
@@ -1600,6 +1640,8 @@ class PrefillAdder:
                         replay_tokens=replay_len,
                         chunk_tokens=self.rem_chunk_tokens,
                     )
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "replay_chunk_budget"
                 return AddReqResult.OTHER
         can_admit, chunk_tokens_limit = self._check_prefill_budget(
             req,
@@ -1615,6 +1657,8 @@ class PrefillAdder:
                     required_tokens=total_tokens,
                     remaining_tokens=self.rem_total_tokens,
                 )
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "prefill_shape_capacity"
             return AddReqResult.NO_TOKEN
 
         # Without chunking, allow the first request even above the input cap.
@@ -1623,6 +1667,8 @@ class PrefillAdder:
             and self.can_run_list
             and input_tokens >= self.rem_input_tokens
         ):
+            if getattr(self, "_tuning_capture_stop", False):
+                self._tuning_stop_site = "unchunked_input_budget"
             return AddReqResult.OTHER
 
         is_chunked = False
@@ -1634,6 +1680,8 @@ class PrefillAdder:
             )
             extend_len = self._get_dllm_extend_len(req, prefix_len)
             if extend_len <= 0:
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "dllm_extend_empty"
                 return AddReqResult.OTHER
             max_new_tokens = 0
         elif chunk_tokens_limit is not None and chunk_fit_tokens > chunk_tokens_limit:
@@ -1643,6 +1691,8 @@ class PrefillAdder:
             ):
                 # Only one unfinished chunked request can be tracked.
                 tuning_recorder.observe("prefill.chunk_slot")
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "existing_chunk_slot"
                 return AddReqResult.OTHER
             if self.exact_chunk_fill:
                 # Take the remainder verbatim so the batch hits exactly
@@ -1665,6 +1715,8 @@ class PrefillAdder:
                 extend_len = end - prefix_len
             if extend_len <= 0:
                 tuning_recorder.observe("prefill.chunk_alignment")
+                if getattr(self, "_tuning_capture_stop", False):
+                    self._tuning_stop_site = "chunk_alignment_empty"
                 return AddReqResult.OTHER
             is_chunked = True
             max_new_tokens = 0

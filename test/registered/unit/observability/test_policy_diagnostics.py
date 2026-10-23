@@ -182,8 +182,16 @@ class Contracts(unittest.TestCase):
                     calls.append(name);return result
                 can_run=[NS(token_indices_to_pool=True,kv=NS(holds_kv=False))] if scenario=='pooling' else []
                 adder=NS(rem_input_tokens=0 if scenario=='pass_budget' else 20480,rem_chunk_tokens=20480,rem_dllm_tokens=None,can_run_list=can_run,budget_state=lambda:readiness('budget',E.OTHER if scenario=='pass_budget' else E.CONTINUE))
+                def sampled_budget():
+                    result=E.OTHER if scenario=='pass_budget' else E.NO_TOKEN if scenario=='reject' else E.CONTINUE
+                    if getattr(adder,'_tuning_capture_stop',False) and result!=E.CONTINUE:
+                        adder._tuning_stop_site='pass_input_budget' if result==E.OTHER else 'pass_capacity_or_mamba_slots'
+                    return readiness('budget',result)
+                adder.budget_state=sampled_budget
                 def add(req,**kwargs):
                     calls.append('add')
+                    if getattr(adder,'_tuning_capture_stop',False) and scenario=='admit_other':
+                        adder._tuning_stop_site='pass_input_budget'
                     if scenario not in ('reject','continue_reject'):adder.can_run_list.append(req)
                     if scenario=='admit_other':adder.rem_input_tokens=-128;adder.rem_chunk_tokens=0
                     return E.NO_TOKEN if scenario in ('reject','admit_no_token') else E.OTHER if scenario=='admit_other' else E.CONTINUE
@@ -203,6 +211,10 @@ class Contracts(unittest.TestCase):
                     self.assertEqual(end['budget_remaining'],{k:vars(adder)[k] for k in ('rem_input_tokens','rem_chunk_tokens','rem_dllm_tokens')})
                     expected='pass_budget_stop' if scenario=='pass_budget' else 'request_slots_stop' if scenario=='slots' else 'adder_result' if scenario in ('reject','admit_no_token','admit_other') else 'queue_scan_exhausted'
                     self.assertEqual(end['cause'],expected)
+                    if expected in ('pass_budget_stop','adder_result'):
+                        self.assertEqual(end['adder_stop_site'], 'pass_input_budget' if scenario in ('pass_budget','admit_other') else None)
+                    # In reject, an ignored budget NO_TOKEN site must not leak
+                    # into the unannotated custom add call's NO_TOKEN result.
                     if expected=='adder_result':
                         self.assertEqual(end['candidate_admitted'],scenario!='reject')
                         self.assertEqual(end['adder_result'],'other' if scenario=='admit_other' else 'no_token')
