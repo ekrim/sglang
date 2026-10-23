@@ -7,19 +7,22 @@
       "graph_nodes": [
         "config.prefill_decode_interval",
         "mechanism.prefill_decode_cadence",
-        "log.prefill.decode_interval"
+        "log.prefill.decode_interval",
+        "mechanism.graph_dispatch",
+        "metric.cuda_graph_passes_total"
       ],
       "observation": "Repeated prefill.decode_interval with waiting_requests>0 or chunk_pending=1, while per-rank prefill service is insufficient.",
       "diagnosis": "The configured decode interval explicitly prevents the admission scan. Free KV or absent budget-gate events do not rule this out.",
       "alternatives": [
         "Queued requests may also be ineligible for cache transfer or capacity.",
-        "Another DP rank can arm the interval; local queue pressure may differ."
+        "Another DP rank can arm the interval; local queue pressure may differ.",
+        "A graph-to-eager transition lengthens scheduler steps, reducing wall-clock prefill opportunities at the same configured countdown; this is distinct from a change in interval value."
       ],
-      "check": "Correlate rank-local gate windows with queue slope, prefill effective-token rates, decode output rate and resolved cadence. Event counts do not measure wait time.",
-      "action": "Choose one cadence adjustment from workload-specific evidence. The C384 interval 24 to 18 full replay is now completed; retain its observed tradeoff and confounders. Select any future cadence trial prospectively and keep other serving controls fixed.",
+      "check": "Correlate rank-local gate windows with queue slope, prefill effective-token rates, decode output rate and resolved cadence. Event counts do not measure wait time. Compare decode graph/non-graph and prefill step rates in the same retained spans. The countdown advances per scheduling call and is rearmed on synchronized extend work, not by a wall-clock timer. Stable step ratios with slower steps can explain less prefill service without a new token-budget limit.",
+      "action": "Choose one cadence adjustment from workload-specific evidence. The C384 interval 24 to 18 full replay is now completed; retain its observed tradeoff and confounders. Select any future cadence trial prospectively and keep other serving controls fixed. If a supported graph-coverage failure slows both decode and prefill opportunities at unchanged step ratio, prioritize a coverage/admission repair candidate before another cadence or prefill-budget change.",
       "expected": "Fewer consecutive deferrals and higher prefill service; decode ITL may worsen.",
       "reject_if": "Output throughput or p10 user speed regresses without a useful Pareto tradeoff; gate evidence does not clear.",
-      "status": "R9 complete; cadence15 does not replace best R6cadence18. New trial tests client concurrency at18, not another cadence reduction.",
+      "status": "R10 Q3 exposes a graph/cadence interaction at fixed interval18; a request-cap candidate is drafted but not queued. Full R10 qualification and idle validation precede next selection.",
       "runtime_evidence": [
         "GB200 baseline-r1 interval24 versus cadence12-r2 interval12, bothC256, same pinned executable/model/image and canonical warmup; countdownmax23 versus11 verifies effective setting.",
         "Short canonical result: totalTPS/GPU291430.60\u2192275773.54,output2271.77\u21922159.40;TTFTp50693.39\u2192519.14ms,p953163.66\u21921621.50ms;ITLp508.351\u219211.206ms. Zero recorded errors; draincancellations19\u219212.",
@@ -29,7 +32,8 @@
         "C384 interval24 retained all40 diagnostic windows: quarter queue means21.94/31.14/27.35/27.56 per rank, with pending chunks and repeated cadence/input-budget gates. Finalization was interrupted, so no qualified C384 score is claimed. Next controlled server change is interval18; new node and durable-output/resource-policy changes are explicit comparison caveats.",
         "GB200 full C384 interval18:355392.77273total/2818.85652outputTPS perGPU,41871successes,128drain cancellations,0request errors,100%TTFT/ITL coverage. Against retained C384 interval24 windows, computed prefill rises about12\u201318% across quarters and decode service is nearly flat (\u22121.61% to+1.35%). The prior C384 lacks a canonical score; the qualified C256 reference differs in load and runtime placement.",
         "R8b qualified full3600s:355329.24083total/2879.70095outputTPS/GPU over4GB200;42609success+117canonical draincancel=42726sent,0errors,393traces,100%TTFT/ITLcoverage,all measured OSLmatch. -2.1296%bestR6,still16.3015%belowoverallvLLM. New diagnostics/backing/cache/closed-loop mix differ; no isolated instrumentation-overhead conclusion. All40windows retained. Quarter prefill changes versusR6:+0.85/-2.98/-1.84/-0.02%,decode:-1.30/-0.31/+1.27/-3.59%; queues persist. Selected R9interval18\u219215 at unchangedcapacity/SPF/C384; full replay required, and extra prefill may worsen decode/ITL.",
-        "R9 full3600s qualified361857.45583total/2854.53903outputTPS/GPU:42348success+113canonical draincancel=42461sent,0errors,393traces,100%TTFT/ITLcoverage,all measured OSLmatch. +1.8372%R8b,-0.3315%R6; ITLp50=13.5791ms, user speedp10/p50=67.1755/73.6425. Retain R6cadence18. All8startup hugepage receipts now100%rounded versus R8b partial; source and closed-loop mix differ. VersusR8b, quarter prefill+5.81/+10.07/+7.57/+6.31%, active+11.06/+8.38/+10.05/+11.90%, decode+0.14/-1.44/-1.42/-1.33%, decodegraphsteps-8.58/-8.17/-10.40/-11.23%. The predicted admission/batch tradeoff occurred without a new best throughput result."
+        "R9 full3600s qualified361857.45583total/2854.53903outputTPS/GPU:42348success+113canonical draincancel=42461sent,0errors,393traces,100%TTFT/ITLcoverage,all measured OSLmatch. +1.8372%R8b,-0.3315%R6; ITLp50=13.5791ms, user speedp10/p50=67.1755/73.6425. Retain R6cadence18. All8startup hugepage receipts now100%rounded versus R8b partial; source and closed-loop mix differ. VersusR8b, quarter prefill+5.81/+10.07/+7.57/+6.31%, active+11.06/+8.38/+10.05/+11.90%, decode+0.14/-1.44/-1.42/-1.33%, decodegraphsteps-8.58/-8.17/-10.40/-11.23%. The predicted admission/batch tradeoff occurred without a new best throughput result.",
+        "R10 window27\u201328.5min:~20.203decodegraphsteps/s and1.125prefillsteps/s (ratio~17.96). Window30\u201331.5min:4.525nongraphdecode/0.25prefillsteps/s (ratio~18.10) with interval18 unchanged. Q3versusR6 decode-52.79%,computedprefill-67.41%,active+52.14%,queues+305.88%,graphsteps-84.43%; nongraphsteps3.814/s over fully covered retained Q3spans. Existing observations support graph slowdown reducing prefill opportunity frequency. These are interval-level associations and source semantics, not exact per-request delays, isolated CPU/GPU time or a final score."
       ]
     },
     {

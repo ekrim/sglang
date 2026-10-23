@@ -2893,7 +2893,8 @@
         "Normal scheduler path; DLLM branch bypasses this gate. Event requires tuning_observation_interval > 0."
       ],
       "confounders": [
-        "A deferral can occur without waiting work; continuing chunks are separate from waiting_queue. Other ranks can arm the shared cadence. Gate encounters are not completed decode forwards or elapsed wait. Downstream capacity checks are not reached in deferred passes."
+        "A deferral can occur without waiting work; continuing chunks are separate from waiting_queue. Other ranks can arm the shared cadence. Gate encounters are not completed decode forwards or elapsed wait. Downstream capacity checks are not reached in deferred passes.",
+        "A fixed step-count interval is not a fixed wall-clock prefill frequency. Slower eager decode can reduce prefill opportunities per second without any cadence config change; diagnose graph coverage before attributing the slower prefill rate to token budgets or choosing a new interval."
       ],
       "hypothesis": "With queued or continuing prefill work, a long decode interval can reduce prefill service even with free KV and no token-budget encounter. Reducing it may increase logical throughput while worsening decode ITL.",
       "next_test": "At fixed concurrency, topology, cache warmup and budgets, compare interval24 versus a lower value only after sustained queued-work deferrals are observed. Compare prefill service, total/output throughput, TTFT and p10 decode speed; reverse the change if the workload tradeoff is unfavorable.",
@@ -5112,6 +5113,11 @@
       "source": "config.max_running_requests",
       "target": "mechanism.graph_dispatch",
       "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "mechanism.prefill_decode_cadence",
+      "relation": "interacts_with"
     }
   ]
 }
