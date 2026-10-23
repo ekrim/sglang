@@ -124,14 +124,17 @@
       "alternatives": [
         "Prefill is deliberately eager in the baseline.",
         "Target versus draft and graph eligibility predicates differ.",
-        "A runner receipt does not prove every layer replayed."
+        "A runner receipt does not prove every layer replayed.",
+        "Sampled local running-request counts can miss transient or DP-wide graph input sizes; non-size eligibility gates can fail below the configured cap."
       ],
-      "check": "Use existing CUDA graph counters with producer-defined labels and actual phase context; obtain mode-specific dispatch evidence before attributing eager events to decode.",
+      "check": "Use existing CUDA graph counters with producer-defined labels and actual phase context; obtain mode-specific dispatch evidence before attributing eager events to decode. In DSpark, decode-result eligibility comes from target verification, not all draft passes or layer-tail replay. Trace decode_cuda_graph_runner.can_run_graph before attributing a fallback to max_bs: overrides, layout/width, supported shape, DP eligibility, encoder, TBO and ngram conditions can reject it. DP gather can use the maximum DP batch size rather than a sampled local request gauge. Preserve absent lazy-created series as unknown; count fractions do not establish exposed time.",
       "action": "Only after confirming uncovered decode/verify sizes, test a larger capture cap with the actual KV-memory cost recorded.",
       "expected": "Increased relevant graph use and lower exposed host overhead.",
       "reject_if": "Extra captures shrink KV enough to harm reuse or relevant graph use does not rise.",
       "status": "Ambiguous signal: do not auto-change from aggregate eager counts",
-      "runtime_evidence": []
+      "runtime_evidence": [
+        "R10 early measurement: decode_none first appears at profiling+349.118s with cumulative4perrank, then reaches14perrank by+579.121s. The observed endpoint delta is10perrank over230.002s; no invented zero baseline for earlier absence. The count establishes some target-result non-graph execution, not its failed predicate or critical-path cost. R10 remains active and unchanged; no capture-cap trial selected from this evidence."
+      ]
     },
     {
       "id": "routing-or-supply",
