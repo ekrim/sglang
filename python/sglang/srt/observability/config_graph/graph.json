@@ -3545,7 +3545,7 @@
       "hypothesis": "If eligible boundary work is significant, fusion may improve service at the retained R6 configuration. Compatibility, incidence and speedup are unproven.",
       "next_test": "Validate pinned DeepGEMM API, checkpoint-weight numerics including optional quantized output, same-stream capture warmup and replay with changed data on idle GPUs. Then establish bounded actual branch evidence and use a full canonical replay for any selected candidate.",
       "remaining_gap": "No distinct selected-branch log in this path. Existing optional capture traces may reveal actual kernel identities during startup; their export receipt alone is insufficient. Eager/mode-specific incidence, exact missed-dispatch predicates, exposed cost and replay frequency remain unresolved.",
-      "evidence": "Source-audited. Job3443116 passed9GPU0synthetic numerical/capture cases, then failed on same-process GPU1device switch with invalid CUDA handle. Fresh-process-per-GPU retry3443246pending; no full serving or throughput result.",
+      "evidence": "Source-audited; retry3443246 passed15synthetic checkpoint-weight cases across4fresh GPU-isolated workers with unchanged tolerances. Full R12 launched on retained R6performance settings; actual serving selection and throughput remain pending. First3443116same-process GPU switch failure remains preserved and its precise cause unproven.",
       "source_audit": [
         {
           "path": "python/sglang/srt/models/deepseek_v4_mhc.py",
