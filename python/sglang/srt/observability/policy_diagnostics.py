@@ -114,7 +114,7 @@ class PolicyPass:
             values["candidate_admitted"] = bool(candidate_admitted)
         self.record["pass_end"] = values
 
-    def finish(self, *, scan_complete=False):
+    def finish(self, *, scan_complete=False, adder=None):
         if scan_complete and "pass_end" not in self.record:
             self.end("queue_scan_exhausted")
         if "pass_end" in self.record:
@@ -123,6 +123,20 @@ class PolicyPass:
                 visited_candidates=visited,
                 unvisited_candidates=max(0, self.record["queue_count"] - visited),
             )
+            if adder is not None:
+                # Read stored CPU scalars only. Do not re-run budget_state(),
+                # capacity/readiness checks, properties, or tensor conversions.
+                # Multiple exhausted residuals can coexist; this is not a
+                # newly evaluated gate or a unique cause for OTHER/NO_TOKEN.
+                residuals = {}
+                stored = vars(adder)
+                for name in ("rem_input_tokens", "rem_chunk_tokens", "rem_dllm_tokens"):
+                    if name not in stored:
+                        continue
+                    value = stored[name]
+                    if value is None or (type(value) in (int, float) and math.isfinite(value)):
+                        residuals[name] = value
+                self.record["pass_end"]["budget_remaining"] = residuals
         self.record.update(queue=dict(self.queue), age_bands=dict(self.age_bands),
                            work_bands=dict(self.work_bands), visits=self.visits)
         if self.oldest is not None:

@@ -3285,7 +3285,7 @@
         "No request identifiers or cache addresses; aggregates cannot reconstruct trajectories.",
         "effective_policy may be fcfs for configured HRRN above128queued requests. queue_snapshot_available=false then means key-derived queue age/work bands and selected-head fields are unavailable, not empty. Candidate work uses the configured-policy formula and is not an FCFS priority."
       ],
-      "interpretation": " Candidate admission and pass termination are separate. Optional pass_end records the existing stop site/result, whether that final candidate was admitted, and visited/unvisited queue counts. OTHER/NO_TOKEN remain adder categories, not unique resource causes. queue_scan_exhausted means the loop visited the queue, not that all requests were admitted. Older records lack this field and are unknown."
+      "interpretation": " Candidate admission and pass termination are separate. Optional pass_end records the existing stop site/result, whether that final candidate was admitted, and visited/unvisited queue counts. OTHER/NO_TOKEN remain adder categories, not unique resource causes. queue_scan_exhausted means the loop visited the queue, not that all requests were admitted. Older records lack this field and are unknown. Optional pass_end.budget_remaining records stored rem_input_tokens/rem_chunk_tokens/rem_dllm_tokens after the loop. Missing means unavailable/older producer; null preserves an unset budget. Nonpositive residuals may coexist and are not a unique stopping cause; no capacity/readiness gate is re-evaluated. Implemented after R10 freeze;31CPUcontracts pass, ARM/full serving validation pending."
     },
     {
       "id": "log.policy_producer_config",

@@ -4296,7 +4296,7 @@ class Scheduler(
                 break
 
         if policy_diagnostics is not None:
-            policy_diagnostics.finish(scan_complete=True)
+            policy_diagnostics.finish(scan_complete=True, adder=adder)
 
         if mamba_allocator is not None:
             mamba_allocator.alloc_group_end()

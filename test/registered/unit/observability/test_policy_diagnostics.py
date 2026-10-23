@@ -143,6 +143,28 @@ class Contracts(unittest.TestCase):
         p=diag.PolicySampler(10,clock=lambda:100,emit=Mock(side_effect=OSError)).begin('hrrn',0)
         p.finish()
 
+    def test_pass_budget_residuals_preserve_coexhaustion_and_unknown(self):
+        class NoConversion:
+            def __float__(self):
+                raise AssertionError('No device or custom scalar conversion')
+        for values, expected in (
+            ({'rem_input_tokens': -256, 'rem_chunk_tokens': 0, 'rem_dllm_tokens': None},
+             {'rem_input_tokens': -256, 'rem_chunk_tokens': 0, 'rem_dllm_tokens': None}),
+            ({'rem_input_tokens': 1024, 'rem_chunk_tokens': None},
+             {'rem_input_tokens': 1024, 'rem_chunk_tokens': None}),
+            ({'rem_input_tokens': float('nan'), 'rem_chunk_tokens': NoConversion(), 'rem_dllm_tokens': True}, {}),
+        ):
+            adder=NS(**values);adder.budget_state=Mock(side_effect=AssertionError('budget re-evaluation'))
+            p,rows=sample(n=2);p.visit(request('a'),'admitted')
+            p.end('adder_result',adder_result='other',candidate_admitted=True)
+            p.finish(scan_complete=True,adder=adder)
+            self.assertEqual(rows[0]['pass_end']['budget_remaining'],expected)
+            self.assertEqual(rows[0]['pass_end']['unvisited_candidates'],1)
+            adder.budget_state.assert_not_called()
+            for name,value in values.items():self.assertIs(vars(adder)[name],value)
+        p,rows=sample();p.finish(scan_complete=True)
+        self.assertNotIn('budget_remaining',rows[0]['pass_end'])
+
     def test_actual_admission_loop_no_extra_readiness_or_order_changes(self):
         # Execute the unmodified production loop, with CPU resources. This covers
         # every existing early stop/skip and successful/rejected adder results.
@@ -150,7 +172,8 @@ class Contracts(unittest.TestCase):
         cls=next(x for x in tree.body if isinstance(x,ast.ClassDef) and x.name=='Scheduler')
         loop=next(x for x in ast.walk(cls) if isinstance(x,ast.For) and isinstance(x.iter,ast.Attribute) and x.iter.attr=='waiting_queue' and any(isinstance(y,ast.Name) and y.id=='policy_diagnostics' for y in ast.walk(x)))
         E=Enum('AddReqResult','CONTINUE NO_TOKEN OTHER')
-        code=compile(ast.fix_missing_locations(ast.Module(body=[loop],type_ignores=[])),'<production-loop>','exec')
+        finish=next(x for x in ast.walk(cls) if isinstance(x,ast.If) and isinstance(x.body[0],ast.Expr) and isinstance(x.body[0].value,ast.Call) and isinstance(x.body[0].value.func,ast.Attribute) and x.body[0].value.func.attr=='finish' and any(k.arg=='scan_complete' for k in x.body[0].value.keywords))
+        code=compile(ast.fix_missing_locations(ast.Module(body=[loop,finish],type_ignores=[])),'<production-loop>','exec')
         for scenario in ('admit','admit_no_token','admit_other','pass_budget','lora','pooling','slots','prefetch','reissue','staging','reject','continue_reject'):
             outputs=[]
             for enabled in (False,True):
@@ -158,10 +181,11 @@ class Contracts(unittest.TestCase):
                 def readiness(name,result):
                     calls.append(name);return result
                 can_run=[NS(token_indices_to_pool=True,kv=NS(holds_kv=False))] if scenario=='pooling' else []
-                adder=NS(can_run_list=can_run,budget_state=lambda:readiness('budget',E.OTHER if scenario=='pass_budget' else E.CONTINUE))
+                adder=NS(rem_input_tokens=0 if scenario=='pass_budget' else 20480,rem_chunk_tokens=20480,rem_dllm_tokens=None,can_run_list=can_run,budget_state=lambda:readiness('budget',E.OTHER if scenario=='pass_budget' else E.CONTINUE))
                 def add(req,**kwargs):
                     calls.append('add')
                     if scenario not in ('reject','continue_reject'):adder.can_run_list.append(req)
+                    if scenario=='admit_other':adder.rem_input_tokens=-128;adder.rem_chunk_tokens=0
                     return E.NO_TOKEN if scenario in ('reject','admit_no_token') else E.OTHER if scenario=='admit_other' else E.CONTINUE
                 adder.add_one_req=add
                 tc=NS(check_prefetch_progress=lambda _:readiness('prefetch',scenario!='prefetch'),pop_prefetch_loaded_span=lambda _:(0,0))
@@ -174,8 +198,9 @@ class Contracts(unittest.TestCase):
                 exec(code,ns)
                 outputs.append((calls,[getattr(q,'rid','existing') for q in can_run],batch.batch_is_full))
                 if enabled:
-                    p.finish(scan_complete=True);self.assertEqual(sum(v['count'] for v in rows[0]['visits'].values()),1)
+                    self.assertEqual(len(rows),1);self.assertEqual(sum(v['count'] for v in rows[0]['visits'].values()),1)
                     end=rows[0]['pass_end']
+                    self.assertEqual(end['budget_remaining'],{k:vars(adder)[k] for k in ('rem_input_tokens','rem_chunk_tokens','rem_dllm_tokens')})
                     expected='pass_budget_stop' if scenario=='pass_budget' else 'request_slots_stop' if scenario=='slots' else 'adder_result' if scenario in ('reject','admit_no_token','admit_other') else 'queue_scan_exhausted'
                     self.assertEqual(end['cause'],expected)
                     if expected=='adder_result':
