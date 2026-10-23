@@ -82,20 +82,21 @@
         "mechanism.dsv4_request_pool_sizing"
       ],
       "observation": "Request-slot encounters and a growing queue while device capacity remains available.",
-      "diagnosis": "Request rows may constrain admission before KV capacity is exhausted.",
+      "diagnosis": "Admission encountered a row/PP-count constraint, which may be an intentional tradeoff that protects graph coverage rather than an undersized knob.",
       "alternatives": [
         "An earlier gate can hide a later memory limit.",
         "Increasing active rows can exceed decode graph capture coverage.",
         "For DSV4, changing row capacity also changes fixed-state/SWA sizing and may change device FULL plus ratio-sized host retention. Read sizing logs before interpreting a pure admission effect."
       ],
-      "check": "Compare resolved per-rank row limit with running requests and graph-use metrics; inspect FULL/SWA separately.",
-      "action": "Raise only the binding per-rank admission cap in a bounded trial; account for graph and request-pool memory.",
+      "check": "Compare resolved row and PP microbatch limits, running/held/beam rows, graph-use service and the canonical throughput/latency tradeoff. The aggregate gate merges pre-sort and candidate-loop sites and does not identify the minimum budget component. A sampled maximum below the cap does not exclude transient saturation.",
+      "action": "Do not raise a cap solely because its gate fires. If complete evidence shows useful work is constrained without sacrificing graph coverage or retention, test a bounded increase in the demonstrated component. When the cap protects capture coverage, first compare its full-run benefit against lost parallelism; expanding capture also requires memory validation.",
       "expected": "More active work, if another gate does not replace this one.",
       "reject_if": "KV gates/retractions immediately replace the row gate or latency worsens without useful throughput.",
-      "status": "No row-cap case established in retained full baseline/reference/R6; maximum sampled active R6 work58/rank versus96cap, with earlier-gate masking caveat",
+      "status": "R11 has early request-slot encounters under the selected64-row graph-coverage cap; full tradeoff and exact budget component remain pending",
       "runtime_evidence": [
         "Fullbaseline sampledmax40running/rank versusresolved96cap; no request-row gate in retained emission windows. Increasing max_running_requests is not supported by these observations.",
-        "R7 first15min has persistent queues but sampled per-rank active maxima47/49/49/45 against96 cap and no observed row-cap events. Earlier gates can mask capacity checks, so this does not establish a row-cap bottleneck or justify increasing that limit."
+        "R7 first15min has persistent queues but sampled per-rank active maxima47/49/49/45 against96 cap and no observed row-cap events. Earlier gates can mask capacity checks, so this does not establish a row-cap bottleneck or justify increasing that limit.",
+        "R11 first0\u20137.5min retains11request-slot encounters (rank1=9,rank2=2) beginning in the4.5\u20136min window. Sampled running maxima reach62, not64; event sites merge PP/free/held/beam constraints and sampled gauges can miss transients. This does not justify undoing the cap or prove a unique max_running_requests bottleneck. Relevant non-graph series remain absent/unknown in these retained spans."
       ]
     },
     {

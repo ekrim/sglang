@@ -194,17 +194,18 @@
         "path": "python/sglang/srt/managers/scheduler.py",
         "anchor": "def get_num_allocatable_reqs"
       },
-      "behavior": "Request-table availability and running-request limits bound admission independently of KV token capacity. Continued requests can already hold their rows.",
+      "behavior": "get_num_allocatable_reqs takes the minimum of PP microbatch budget and nonnegative free request rows plus already-held rows minus pending beam-member rows, with a further beam-width quotient when applicable. Continued requests can retain rows. The request_slots event is emitted at both the pre-sort no-room gate and a candidate-loop limit; token capacity is a separate constraint.",
       "conditions": [
         "Interpret separately for P, AGG and D; D has dedicated preallocation."
       ],
       "confounders": [
-        "Per-rank effective limits; held rows; in-transfer rows; PP microbatches; LoRA eligibility; graph capture size."
+        "Per-rank effective limits; held rows; in-transfer rows; PP microbatches; LoRA eligibility; graph capture size.",
+        "A deliberately bounded admission cap can protect decode graph coverage. Its gate firing does not by itself mean the cap should rise; raising it can reintroduce a slower execution regime."
       ],
       "hypothesis": "If row/count gates bind before memory, more rows may raise occupancy; it can also increase graph/workspace memory and decode latency.",
-      "next_test": "Compare row gate observations with free tokens and graph capacity before increasing the cap.",
-      "remaining_gap": "No occupancy gauge for every metadata/request allocator; reason logs identify encountered gates, not all concurrent limits.",
-      "evidence": "code-audited; causal performance effect requires paired experiment"
+      "next_test": "Compare resolved row/PP limits, held/beam reservations, graph coverage and full-run service. Preserve a graph-protecting cap until a complete comparison shows its admission cost outweighs its benefit; widening capture requires separate memory validation.",
+      "remaining_gap": "The aggregate request_slots event has no site or component-budget fields. A future sampled receipt should retain the already-computed PP/free/held/beam budgets and candidate threshold at the actual stop, without extra pool/readiness calls. Counts are gate encounters, not requests or blocked time.",
+      "evidence": "R11 first five90s windows retain11request-slot encounters on ranks1/2 while sampled running maxima remain<=62 against resolved64. Ten-second gauges can miss transient work; competing PP/held-row terms also prevent attributing each event uniquely to max_running_requests. Full replay remains pending."
     },
     {
       "id": "config.max_running_requests",
