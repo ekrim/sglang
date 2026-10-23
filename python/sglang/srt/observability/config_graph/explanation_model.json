@@ -534,16 +534,18 @@
       "alternatives": [
         "Collective planning or a missing/incompatible next boundary prevents dispatch.",
         "The pinned library lacks the required API or fails numeric/capture checks.",
-        "Fusion is reached but does not dominate the measured workload; optional quantization or decode paths change the tradeoff."
+        "Fusion is reached but does not dominate the measured workload; optional quantization or decode paths change the tradeoff.",
+        "A synthetic probe that switches GPUs after initializing context-local library state may fail even when the serving process topology works; reproduce the actual process/device ownership before changing model code."
       ],
       "check": "Trace the reached branch, mode and shape. Validate checkpoint-weight shifted ordering, BF16 rounding, next statistics, optional MXFP8 output and per-stream warmup/capture on the pinned GPU library. Keep synthetic correctness separate from actual model quality and serving selection. Existing --enable-profile-cuda-graph plus SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE can export actual startup kernel traces; verify their contents and runner/rank/timing coverage instead of treating an export log as kernel evidence.",
       "action": "Use a bounded idle compatibility probe before selecting a full R6-based performance candidate. Prefer existing startup capture traces to establish actual kernel selection where covered; add bounded branch evidence for remaining ambiguous paths. Keep capture/warmup activity separate from measured replay incidence and confirm any promising result without startup profiling.",
       "expected": "A compatible kernel passes numerical and capture checks; actual selection receipts and full replay then test whether useful service and canonical throughput improve.",
       "reject_if": "Numeric/API/capture checks fail, actual serving selection cannot be established, or the full candidate regresses the intended throughput/latency objective.",
-      "status": "Source audit; GPU probe pending. No selected full performance experiment and no speedup claim.",
+      "status": "Partial GPU compatibility evidence: all9GPU0cases passed; first probe failed on switching to GPU1 in the same process. Fresh-process-per-GPU retry pending. No full performance run selected.",
       "runtime_evidence": [
         "Job3443116 submitted on GB200 using frozen executable5e70162. Probe covers synthetic layer0 attention-to-FFN weights, fifteen shape/device/quantization cases; it does not cover every seam or real activation distribution.",
-        "Source audit found existing combined capture profiling/export gated by both the server profiling flag and trace environment flag. Prospective R12 draft declares these supporting settings and all observer changes; no GPU result or full-run selection yet."
+        "Source audit found existing combined capture profiling/export gated by both the server profiling flag and trace environment flag. Prospective R12 draft declares these supporting settings and all observer changes; no GPU result or full-run selection yet.",
+        "Job3443116 onGB200 passed41actualARM contracts, all11057sourceblobs/130clientversions/mount identities and9GPU0numerical/capture/changed-input cases, including3optionalMXFP8cases. Maximum normalized abs error0.00390625 and quantized relativeRMS0.0266704 remained within predeclared tolerances. FirstGPU1eagercall after same-process device switching failedCUDA_ERROR_INVALID_HANDLE inDeepGEMMlaunch. This is not a numerical disagreement or proof of production failure: serving uses oneGPUperprocess. Probe revised to4fresh single-visible-GPUworkers, unchangedmath/tolerances;4CPUprocess-lifecycle contracts pass; retry3443246pending. All-rank compatibility, actual serving selection and performance remain unproven."
       ]
     }
   ],
