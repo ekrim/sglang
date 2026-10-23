@@ -156,7 +156,7 @@ Scheduling order is mapped separately from capacity and cadence. `schedule_polic
 
 ## Optional allocator endpoint snapshot
 
-For a later validated deployment, set `SGLANG_TUNING_CUDA_ALLOCATOR_STATS=1` with a positive tuning observation interval. It is disabled by default and has not been deployed in the Phase 3 R6 experiment. CPU contract tests pass; actual GPU integration and disabled/enabled overhead remain to be checked.
+For a later validated deployment, set `SGLANG_TUNING_CUDA_ALLOCATOR_STATS=1` with a positive tuning observation interval. It is disabled by default and has not been deployed in the Phase 3 R6 experiment. CPU contracts and an isolated pinned-image GPU0 native-allocator/recorder check pass. All-rank serving integration and disabled/enabled serving overhead remain to be checked. Neither memory diagnostic is in the R6/R7 serving overlay.
 
 Each nonempty `tuning_observation` flush then adds `allocator_snapshot`. The native PyTorch backend reports current allocated, reserved, active and inactive-split bytes, plus cumulative allocation-retry and OOM counters. These are endpoint values, not window means or peaks. No sample is taken per scheduling event, while disabled, or for an empty flush. The sampler does not request CUDA initialization, synchronization, cache clearing or peak-stat resets.
 
@@ -165,6 +165,10 @@ Each nonempty `tuning_observation` flush then adds `allocator_snapshot`. The nat
 
 ## Optional MegaMoE buffer provenance
 
-`SGLANG_TUNING_MOE_BUFFER_STATS=1` enables `tuning_moe_buffer` after each process-local SGLang buffer-cache miss, independently of the observation interval. It is disabled by default and has not been deployed in R6. CPU tests check cache-hit silence, unchanged buffer identity and metadata failure handling; actual GPU/library behavior remains unvalidated.
+`SGLANG_TUNING_MOE_BUFFER_STATS=1` enables `tuning_moe_buffer` after each process-local SGLang buffer-cache miss, independently of the observation interval. It is disabled by default and has not been deployed in R6. CPU tests check cache-hit silence, unchanged buffer identity and metadata failure handling. Actual four-rank pinned-image library construction/metadata checks now pass for four source-derived geometries; MoE kernels, full SGLang GPU cache integration and serving overhead remain unvalidated. Requested20,480 aligned to21,120, so use resolved geometry for sizing.
 
 The receipt reads existing CPU metadata: requested and aligned token caps, process-group size, expert/top-k/hidden/intermediate/shared-expert geometry, SMS, bounded MMA/activation kinds and exposed tensor bytes. It adds no sizing query, tensor read, collective or synchronization to the existing allocation path. Cache misses do not prove fresh physical allocation in the library/allocator. Process-group identity and addresses are omitted; identical geometry is not sufficient to deduplicate receipts. The reported tensor size excludes other allocations and transient peaks. Missing metadata is `unavailable`, not zero. Pair this provenance with allocator snapshots and physical-memory observations after GPU validation.
+
+## Proposed policy diagnostics
+
+[POLICY_DIAGNOSTICS.md](POLICY_DIAGNOSTICS.md) specifies the remaining queue-age/readiness/continuation gap. It is a design, not emitted telemetry. Sorting precedes admission readiness; current queue-episode age, HRRN submitted-token age and first-forward histogram populations must stay distinct. The source-audited policy costs also differ for output-bearing requests; that synthetic possibility does not establish workload incidence.
