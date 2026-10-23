@@ -2223,7 +2223,7 @@
       },
       "declared_default": "None",
       "review_status": "causal_mapping",
-      "runtime_evidence": "R8b full repeat at18 retains queued work and cadence encounters despite sampled running counts below96/rank; R9 tests15 at fixed20480input/chunk/MegaMoE capacity and C384/SPF. Additional pass_end diagnostics and explicit PIL are declared supporting changes. This is a falsifiable test, not established optimality."
+      "runtime_evidence": "R8b full repeat at18 retains queued work and cadence encounters despite sampled running counts below96/rank; R9 tests15 at fixed20480input/chunk/MegaMoE capacity and C384/SPF. Additional pass_end diagnostics and explicit PIL are declared supporting changes. This is a falsifiable test, not established optimality. R9 complete:moreprefill/largeractivebatches but fewerdecodesteps and worseITL; no newbestscore. Revert18for nextloadtrial."
     },
     {
       "id": "metric.scheduler_stage_seconds_total",
@@ -3273,7 +3273,7 @@
         "path": "python/sglang/srt/observability/policy_diagnostics.py",
         "anchor": "tuning_policy_pass %s"
       },
-      "availability": "Default off; SGLANG_TUNING_POLICY_INTERVAL positive seconds, unified SPF/HRRN passes only. R8b frozen1422f5c completed a valid full3600s replay with supported samples on all4ranks in all4quarters; missing/unsampled work remains unknown. Optional pass_end was absent in R8b. Source8245279 adds it and passed30CPUcontracts on actual ARM serving image before fresh R9 deployment; R9 serving coverage still pending. R8b source/backing/cache/mix differences prevent isolated overhead attribution. Rate-limited at an existing sorting/admission pass, not a heartbeat; absent in R6/R7.",
+      "availability": "Default off; SGLANG_TUNING_POLICY_INTERVAL positive seconds, unified SPF/HRRN passes only. R8b frozen1422f5c completed a valid full3600s replay with supported samples on all4ranks in all4quarters; missing/unsampled work remains unknown. Optional pass_end was absent in R8b. Source8245279 adds it and passed30CPUcontracts on actual ARM serving image before fresh R9 deployment; R9 full profiling verified1387pass_end records across4ranks;1177OTHERadder endings,1172afteradmission. Exact resource attribution still incomplete. R8b source/backing/cache/mix differences prevent isolated overhead attribution. Rate-limited at an existing sorting/admission pass, not a heartbeat; absent in R6/R7.",
       "semantics": "Paired oldest current queue-episode age/work, selected-head age/work, fixed age/work bands and prefix-deferred/output-bearing/previously-forwarded counts from the existing sorting keys. Candidate reason summaries reflect only actually visited candidates, not unvisited requests or unique requests over time. Existing readiness results reused. Continuation reports actual returned policy cap, calculated reserved tokens and admitted extend tokens. No cap is not zero capacity.",
       "limitations": [
         "Episode timestamps reset on reentry; no lifetime starvation claim.",
