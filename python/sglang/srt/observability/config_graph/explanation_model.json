@@ -97,7 +97,8 @@
       "graph_nodes": [
         "mechanism.kv_memory",
         "mechanism.hybrid_pools",
-        "config.mem_fraction_static"
+        "config.mem_fraction_static",
+        "mechanism.dsv4_host_sizing"
       ],
       "observation": "FULL/SWA/shared-capacity failures during queued work, or retractions under sustained load.",
       "diagnosis": "The effective device-pool geometry or reservations cannot fit the workload.",
@@ -283,7 +284,8 @@
         "config.hicache_write_policy",
         "metric.evicted_tokens_total",
         "metric.hicache_dropped_tokens_total",
-        "metric.hicache_backup_duration_seconds"
+        "metric.hicache_backup_duration_seconds",
+        "mechanism.dsv4_host_sizing"
       ],
       "observation": "Host-cache occupancy grows beyond the first15minutes while device eviction/backups continue; device-without-backup drop counters remain zero in observed windows.",
       "diagnosis": "Device eviction may be normal tier migration. Full/L2 working-set pressure is plausible later, but neither low activeKV usage nor zero device-drop counters proves spare retention capacity.",
@@ -293,8 +295,8 @@
         "Cache TP coordinates differ from scheduler TP coordinates under DPattention.",
         "DSV4 generic host-used/total gauges measure logical FULL anchors, which own no KV tensor; compressed/SWA physical pools and total host RAM are not represented by that percentage."
       ],
-      "check": "Preserve DP/attentionTP/pool labels; compare available/evictable/used tokens, host occupancy, computed versus cached input, drop deltas and operation-duration deltas across the full replay. Do not add overlapping eviction/backup durations.",
-      "action": "Change host size/write policy only after the full-run evidence identifies retention or transfer cost and actual memory permits it. If host churn is ambiguous, add bounded requested/freed host-eviction summaries at evict_host and verify before a capacity intervention.",
+      "check": "Preserve DP/attentionTP/pool labels; compare available/evictable/used tokens, host occupancy, computed versus cached input, drop deltas and operation-duration deltas across the full replay. Do not add overlapping eviction/backup durations. DeepSeek V4 derives host pages from device page capacities times hicache_ratio and rejects positive hicache_size. A lower static-memory fraction can shrink both device and ratio-sized host retention if it lowers resolved pool capacity. Inspect actual capacities and physical bytes; a compensating ratio need not preserve all side pools.",
+      "action": "Change host size/write policy only after the full-run evidence identifies retention or transfer cost and actual memory permits it. If host churn is ambiguous, add bounded requested/freed host-eviction summaries at evict_host and verify before a capacity intervention. On DeepSeek V4 use the supported ratio control, not an explicit positive hicache_size; treat any simultaneous static-memory/ratio adjustment as a coupled intervention.",
       "expected": "A true retention limitation should show late reuse/recompute changes or host eviction evidence; added host-eviction observation distinguishes ordinary L2 eviction from unbacked device drops.",
       "reject_if": "Workload/routing changes explain the signal, transfers are not exposed, or no retention benefit remains after matching relevant regimes. Zero device-drop counts alone cannot reject ordinary L2 eviction.",
       "status": "Fullbaseline retention evolution observed; ordinaryhost-eviction attribution remains incomplete",
@@ -302,7 +304,8 @@
         "baseline-hour-r3 host occupancy~49\u201371% at16.5min, device eviction/backups continue, all observed hicache_dropped_tokens_total deltas0 through21min.",
         "Cache metrics dp0\u20133/tp0 are attention-mesh labels; scheduler tp0\u20133 are global labels in this DEP4 run.",
         "Fullbaseline reported logical host anchors reach100% on allranks by33\u201334.5min. Existing source _log_hicache_stats, DeepSeekV4 strategy and LogicalHostPool establish scope. No all-component/physical100%claim.",
-        "All40fullbaseline windows: logicalanchor capacity reached by33\u201334.5min without sharp persistent computedprefill/queue deterioration; observed device-without-backup droppedtokensdelta0. This does not establish absence of ordinaryhosteviction."
+        "All40fullbaseline windows: logicalanchor capacity reached by33\u201334.5min without sharp persistent computedprefill/queue deterioration; observed device-without-backup droppedtokensdelta0. This does not establish absence of ordinaryhosteviction.",
+        "R9/R10 startup resolves mem_fraction_static0.76,hicache_ratio2,hicache_size0,hicache_host_memory_fractionNone. CPU source examples verify device FULL pages16\u219212 at ratio2 shrinks host pages32\u219224; compensating ratio8/3 restores FULL32 but changes a fixed four-page SWA pool8\u219210. This is sizing algebra, not a GPU capacity or performance prediction."
       ]
     },
     {
@@ -412,7 +415,8 @@
         "mechanism.measurement",
         "log.cuda_allocator_snapshot",
         "config.SGLANG_TUNING_CUDA_ALLOCATOR_STATS",
-        "log.moe_buffer_creation"
+        "log.moe_buffer_creation",
+        "mechanism.dsv4_host_sizing"
       ],
       "observation": "GPU management snapshots show very little free memory, possibly without corresponding KV admission failures.",
       "diagnosis": "Physical usage is not decomposed by logical KV utilization or the configured static fraction. Live tensors, reserved allocator blocks, graph/private pools and external symmetric buffers are competing contributors.",
@@ -422,11 +426,11 @@
         "Request shape, startup history and lazy capture differ across ranks and runs.",
         "Native high-water counters can predate the observed quarter or be reset by another caller. Distinct peak fields need not coincide; their sum is not peak memory usage."
       ],
-      "check": "Retain timestamped GPU samples and resolved pool capacities. On a later validated deployment, enable the optional native-allocator snapshot and inspect allocated/reserved/active bytes plus same-process retry/OOM counter deltas. Unsupported, missing and error statuses remain unknown. Use actual buffer-creation receipts for external allocation provenance. Size external buffers with the resolved aligned cap. Retire earlier unaligned API estimates as actual allocation or headroom evidence; no corrected baseline delta was measured by this probe.",
+      "check": "Retain timestamped GPU samples and resolved pool capacities. On a later validated deployment, enable the optional native-allocator snapshot and inspect allocated/reserved/active bytes plus same-process retry/OOM counter deltas. Unsupported, missing and error statuses remain unknown. Use actual buffer-creation receipts for external allocation provenance. Size external buffers with the resolved aligned cap. Retire earlier unaligned API estimates as actual allocation or headroom evidence; no corrected baseline delta was measured by this probe. If considering less static KV allocation to create runtime slack, trace the actual sizing path and account for ratio-sized host retention; lower logical KV occupancy does not establish that lost prefix retention is free.",
       "action": "Keep an active benchmark unchanged. If an actual allocation failure occurs, preserve it and choose one memory-headroom intervention for a fresh trial. When memory provenance is ambiguous, validate and enable bounded allocator/buffer receipts in a separate instrumentation trial before attributing low free memory to a particular config. Never flush caches or reset peaks in a live comparison to manufacture headroom.",
       "expected": "Allocator snapshots distinguish supported native allocator counters from unknown external/pool contributions; a later headroom intervention should reduce actual allocation failures without an unacceptable capacity/throughput loss.",
       "reject_if": "Snapshot coverage/backend is unknown, observation changes behavior materially, or only a reserved-memory subtraction supports the claimed cause.",
-      "status": "Full serving coverage established in R8b; isolated overhead and complete/peak memory accounting unresolved. Keep workspace fixed for R9.",
+      "status": "All-rank full-hour current-snapshot/buffer coverage established in R8b/R9. Reset-scoped peaks and stored policy residuals are prepared but absent in frozen R10; idle ARM/API validation and serving coverage remain pending. No larger workspace trial selected.",
       "runtime_evidence": [
         "R6 warmup reported rank2 free193/141/117/43MiB at management samples while requests continued without reported errors. Later free space recovered on rank2 while rank0 approached41MiB. These snapshots alone do not prove OOM or isolate live versus reserved memory.",
         "Idle GB200 GPU0 check after R6 preservation:64MiB tensor raised allocated/reserved to67108864bytes; after release allocated/active returned0 while reserved remained67108864.250sampler calls median87.6485us,p95113.216us,max169.728us. Uninitialized call created no CUDA context; explicit init/sync/flush/reset calls forbidden during sampling; nonempty recorder window integration passed. This distinguishes owned allocated versus cached reservation in this scope only; not production serving overhead or external/private memory coverage.",

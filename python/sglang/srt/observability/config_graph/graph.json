@@ -3444,6 +3444,39 @@
       },
       "availability": "Existing model-validation ValueError for prefill graph backends other than disabled/breakable; source-audited.",
       "interpretation": "Compatibility constraint, not a measured graph fallback or performance diagnosis."
+    },
+    {
+      "id": "mechanism.dsv4_host_sizing",
+      "kind": "mechanism",
+      "title": "DeepSeek V4 device-to-host cache sizing coupling",
+      "source": {
+        "path": "python/sglang/srt/mem_cache/hybrid_cache/hybrid_pool_assembler.py",
+        "anchor": "def _deepseek_v4_num_host_pages"
+      },
+      "behavior": "FULL and SWA host page counts are int(device_pages * hicache_ratio); GPU C128 uses FULL host page count unless an independent C128 allocator is present. Positive hicache_size is rejected in this model path. Regular KV profiling subtracts pre_model_load_memory * (1 - mem_fraction_static) runtime slack before resolving aligned/capped pool geometry, so a static-memory change can indirectly alter ratio-sized host retention.",
+      "conditions": [
+        "DeepSeek V4 HiCache builder is selected; inspect effective pool geometry rather than generic field defaults.",
+        "Explicit hicache_ratio or hicache_size disables host-memory-fraction auto-sizing; post-capture KV sizing has its own supported-path rules."
+      ],
+      "confounders": [
+        "Explicit token caps, page rounding, fixed draft/SWA pools, startup free-memory baselines and post-capture resizing can break a naive linear capacity estimate.",
+        "Preserving FULL host pages by compensating the ratio need not preserve SWA/sidecar geometry, physical host bytes, device retention or hit distribution."
+      ],
+      "hypothesis": "Reducing static KV allocation can create runtime slack if device allocation actually shrinks, but at fixed ratio may sacrifice host as well as device retention.",
+      "next_test": "Before a fresh memory-budget trial, record resolved fraction/ratio/size, device capacities, logical host capacity and physical memory. Reconcile every coupled change and validate actual capacities; do not propose hicache_size for this path.",
+      "remaining_gap": "No paired performance or headroom benefit established by source algebra; logical host capacity does not measure every physical component.",
+      "evidence": "Actual CPU sizing function verified with synthetic metadata; source unchanged from frozen R10. R9/R10 resolved fraction0.76,ratio2,size0,host-memory-fractionNone. No active configuration changed."
+    },
+    {
+      "id": "log.dsv4_hicache_size_unsupported",
+      "kind": "log",
+      "name": "DeepSeek V4 HiCache currently does not support --hicache-size",
+      "source": {
+        "path": "python/sglang/srt/mem_cache/hybrid_cache/hybrid_pool_assembler.py",
+        "anchor": "DeepSeek V4 HiCache currently does not support --hicache-size"
+      },
+      "availability": "ValueError during DeepSeek V4 host-pool sizing when hicache_size > 0; verified with actual CPU sizing function, not a GPU launch.",
+      "interpretation": "This path accepts hicache_ratio for sizing; an explicit positive GiB size is unsupported. Do not treat this as insufficient RAM or repair it by reserving a larger host."
     }
   ],
   "edges": [
@@ -5037,6 +5070,41 @@
     {
       "source": "mechanism.dsv41_execution_compatibility",
       "target": "log.dsv41_trtllm_prefill_graph_rejected",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.mem_fraction_static",
+      "target": "mechanism.dsv4_host_sizing",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_ratio",
+      "target": "mechanism.dsv4_host_sizing",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.hicache_size",
+      "target": "mechanism.dsv4_host_sizing",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "mechanism.dsv4_host_sizing",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.dsv4_host_sizing",
+      "target": "mechanism.host_cache",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.dsv4_host_sizing",
+      "target": "metric.hicache_host_total_tokens",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.dsv4_host_sizing",
+      "target": "log.dsv4_hicache_size_unsupported",
       "relation": "observed_by"
     }
   ]
