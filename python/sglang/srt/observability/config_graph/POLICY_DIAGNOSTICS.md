@@ -50,3 +50,7 @@ CPU tests execute production sorting and continuation methods plus the actual ad
 ## CPU overhead check
 
 On the login CPU,200 synthetic SPF sorts per case compared frozen4e6e7f8, diagnostics disabled, and one sampled pass including JSON serialization. At queue32/128/512, baseline medians were16.14/60.82/257.77us; disabled16.11/62.59/262.05us; sampled113.61/410.51/1602.47us. Sampled p95 was234.37/683.98/2058.39us. These are local synthetic measurements, not ARM scheduler or end-to-end overhead. Actual sink I/O and candidate loop are excluded. Full replay must establish coverage and practical overhead before a tuning decision.
+
+## Effective-policy fallback
+
+HRRN/LPM fall back to FCFS when the waiting queue exceeds128. SPF does not. Every sampled pass records configured policy and effective_policy after the existing policy selection. queue_snapshot_available=false indicates no supported sort-key population was observed; selected-head and age/work bands are unavailable, not zero. Candidate outcomes still describe actually visited requests, but their work estimates use the configured-policy formula, not an FCFS priority. The128/129boundary is covered by a production-method contract. This source behavior alone does not prove its incidence or performance impact in R7.

@@ -3146,7 +3146,8 @@
         "Cache-aware policy with prefix matching enabled; inspect resolved policy and specialized paths.",
         "The existing shortest-prefill diagnostic log is sampled once per128 sorting calls; it is not a heartbeat or oldest-request receipt.",
         "prefill.chunk_slot is emitted only in the shortest-prefill-first path when another unfinished chunk exists and a new request would need chunking. Its absence after a policy switch is a producer-population change, not proof of spare chunk capacity.",
-        "Sorting occurs before candidate budget/LoRA/prefetch/staging admission checks. A sorted head or non-deferred prefix candidate is not established eligible work."
+        "Sorting occurs before candidate budget/LoRA/prefetch/staging admission checks. A sorted head or non-deferred prefix candidate is not established eligible work.",
+        "Configured HRRN (and LPM) switches to FCFS above128waiting requests in _determine_active_policy; SPF does not. Read effective_policy per sampled pass. R7 incidence/impact is not established by source behavior alone."
       ],
       "confounders": [
         "Estimated uncached work differs from total input length and from actual transfer/replay cost.",
@@ -3280,7 +3281,8 @@
         "Samples can miss brief events; earlier cadence/capacity gates prevent sampling.",
         "Policy cap applicability includes the minimum-budget condition; reserved tokens omitted when not calculated.",
         "not_admitted_other is an adder result category, not a unique causal gate; correlate existing gate events.",
-        "No request identifiers or cache addresses; aggregates cannot reconstruct trajectories."
+        "No request identifiers or cache addresses; aggregates cannot reconstruct trajectories.",
+        "effective_policy may be fcfs for configured HRRN above128queued requests. queue_snapshot_available=false then means key-derived queue age/work bands and selected-head fields are unavailable, not empty. Candidate work uses the configured-policy formula and is not an FCFS priority."
       ]
     },
     {

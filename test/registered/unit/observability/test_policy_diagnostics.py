@@ -20,9 +20,9 @@ diag = importlib.util.module_from_spec(spec); spec.loader.exec_module(diag)
 def methods():
     tree = ast.parse((SRT/'managers/schedule_policy.py').read_text())
     cls = next(x for x in tree.body if isinstance(x, ast.ClassDef) and x.name == 'SchedulePolicy')
-    wanted = {'_shortest_prefill_work','_uncached_len','_sort_by_shortest_prefill','_sort_by_hrrn','shortest_prefill_chunk_limit'}
+    wanted = {'_shortest_prefill_work','_uncached_len','_sort_by_shortest_prefill','_sort_by_hrrn','shortest_prefill_chunk_limit','_determine_active_policy'}
     cls.body = [x for x in cls.body if isinstance(x, ast.FunctionDef) and x.name in wanted]
-    ns = {'CacheAwarePolicy': NS(SHORTEST_PREFILL_FIRST='shortest-prefill-first'), '_ceil_div': lambda a,b: -(-a//b)}
+    ns = {'CacheAwarePolicy': NS(SHORTEST_PREFILL_FIRST='shortest-prefill-first',HRRN='hrrn',LPM='lpm'), 'CacheAgnosticPolicy': NS(FCFS='fcfs'), 'WAITING_QUEUE_PREFIX_MATCH_MAX':128, '_ceil_div': lambda a,b: -(-a//b)}
     module = ast.Module(body=[ast.ImportFrom(module='__future__',names=[ast.alias(name='annotations')],level=0),cls],type_ignores=[])
     exec(compile(ast.fix_missing_locations(module),'<production-policy>','exec'),ns)
     return ns['SchedulePolicy']
@@ -119,6 +119,15 @@ class Contracts(unittest.TestCase):
         obj.policy='shortest-prefill-first';p,rows=sample()
         self.assertEqual(obj.shortest_prefill_chunk_limit(chunk,[request('a',2000),request('b',3000)],20480,256,p),15360)
         self.assertEqual(p.record['continuation']['reserved_tokens'],5120)
+
+    def test_effective_policy_threshold(self):
+        obj=Policy()
+        for configured in ('hrrn','lpm','shortest-prefill-first'):
+            obj.policy=configured
+            for n in (0,128,129,384):
+                actual=obj._determine_active_policy([None]*n)
+                expected='fcfs' if configured in ('hrrn','lpm') and n>128 else configured
+                self.assertEqual(actual,expected)
 
     def test_sink_failure_isolated(self):
         p=diag.PolicySampler(10,clock=lambda:100,emit=Mock(side_effect=OSError)).begin('hrrn',0)

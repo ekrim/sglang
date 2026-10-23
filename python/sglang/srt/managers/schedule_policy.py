@@ -229,6 +229,11 @@ class SchedulePolicy:
         diagnostics=None,
     ) -> None:
         policy = self._determine_active_policy(waiting_queue)
+        if diagnostics is not None:
+            diagnostics.record["effective_policy"] = policy.value
+            diagnostics.record["queue_snapshot_available"] = policy in {
+                CacheAwarePolicy.HRRN, CacheAwarePolicy.SHORTEST_PREFILL_FIRST
+            }
 
         # Cache-agnostic policies sort without matching; match anyway so the load
         # snapshot sees num_matched_prefix_tokens. Decode never prefills.

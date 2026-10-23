@@ -4081,7 +4081,11 @@ class Scheduler(
             processed_tokens=self.processed_tokens_counter,
             diagnostics=policy_diagnostics,
         )
-        if policy_diagnostics is not None and self.waiting_queue:
+        if (
+            policy_diagnostics is not None
+            and policy_diagnostics.record.get("queue_snapshot_available")
+            and self.waiting_queue
+        ):
             policy_diagnostics.head(self.waiting_queue[0])
 
         if TEST_RETRACT and running_bs > TEST_RETRACT_NO_PREFILL_BS:
