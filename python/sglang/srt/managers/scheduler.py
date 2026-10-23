@@ -4170,6 +4170,7 @@ class Scheduler(
             if adder.budget_state() == AddReqResult.OTHER:
                 if policy_diagnostics is not None:
                     policy_diagnostics.visit(req, "pass_budget_stop")
+                    policy_diagnostics.end("pass_budget_stop")
                 break
             if self.enable_lora and not self.can_schedule_lora_req(req, running_loras):
                 if policy_diagnostics is not None:
@@ -4207,6 +4208,7 @@ class Scheduler(
                 ):
                     if policy_diagnostics is not None:
                         policy_diagnostics.visit(req, "request_slots_stop")
+                        policy_diagnostics.end("request_slots_stop")
                     break
 
             if self.enable_hicache_storage or self.enable_lmcache:
@@ -4266,6 +4268,11 @@ class Scheduler(
                 running_loras.add(req.lora_id)
 
             if res != AddReqResult.CONTINUE:
+                if policy_diagnostics is not None:
+                    policy_diagnostics.end(
+                        "adder_result", adder_result=res.name.lower(),
+                        candidate_admitted=admitted,
+                    )
                 if res == AddReqResult.NO_TOKEN:
                     # Set batch_is_full after making sure there are requests that can be served
                     running_batch.batch_is_full = len(adder.can_run_list) > 0 or (
@@ -4289,7 +4296,7 @@ class Scheduler(
                 break
 
         if policy_diagnostics is not None:
-            policy_diagnostics.finish()
+            policy_diagnostics.finish(scan_complete=True)
 
         if mamba_allocator is not None:
             mamba_allocator.alloc_group_end()

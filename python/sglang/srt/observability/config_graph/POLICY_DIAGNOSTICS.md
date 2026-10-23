@@ -54,3 +54,12 @@ On the login CPU,200 synthetic SPF sorts per case compared frozen4e6e7f8, diagno
 ## Effective-policy fallback
 
 HRRN/LPM fall back to FCFS when the waiting queue exceeds128. SPF does not. Every sampled pass records configured policy and effective_policy after the existing policy selection. queue_snapshot_available=false indicates no supported sort-key population was observed; selected-head and age/work bands are unavailable, not zero. Candidate outcomes still describe actually visited requests, but their work estimates use the configured-policy formula, not an FCFS priority. The128/129boundary is covered by a production-method contract. This source behavior alone does not prove its incidence or performance impact in R7.
+
+
+### Admission is distinct from ending a pass
+
+R8b's first quarter exposed an interpretation hazard: `visits.admitted` establishes that the request was appended, but the same `add_one_req` call can return `OTHER` or `NO_TOKEN` and end the pass. `pass_budget_stop` counts only the earlier pre-candidate gate. These counts must not be read as all pass endings.
+
+A later development refinement adds optional `pass_end`: cause (`pass_budget_stop`, `request_slots_stop`, `adder_result`, `queue_scan_exhausted`), the existing adder result and admitted boolean when applicable, plus visited/unvisited candidate counts. It adds no queue/readiness scan, GPU call or decision. A candidate counted at an early stop has been visited, even if readiness is unknown. Exhausting the scan is not admitting the whole queue. Adder result categories do not identify which underlying memory/compute resource caused a stop.
+
+Thirty CPU contracts pass in total, including actual production-loop equivalence for admitted-and-stop outcomes and explicit unknowns when no scan completed. Full ARM/serving validation remains pending; frozen R8b1422f5c has no pass_end field.

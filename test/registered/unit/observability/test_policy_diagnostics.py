@@ -129,6 +129,16 @@ class Contracts(unittest.TestCase):
                 expected='fcfs' if configured in ('hrrn','lpm') and n>128 else configured
                 self.assertEqual(actual,expected)
 
+    def test_unvisited_population_and_missing_scan_are_explicit(self):
+        p,rows=sample(n=3)
+        p.visit(request('first'), 'admitted')
+        p.end('adder_result', adder_result='other', candidate_admitted=True)
+        p.finish(scan_complete=True)
+        self.assertEqual(rows[0]['pass_end']['unvisited_candidates'],2)
+        self.assertEqual(rows[0]['visits']['admitted']['count'],1)
+        p,rows=sample(n=3);p.finish()
+        self.assertNotIn('pass_end',rows[0])
+
     def test_sink_failure_isolated(self):
         p=diag.PolicySampler(10,clock=lambda:100,emit=Mock(side_effect=OSError)).begin('hrrn',0)
         p.finish()
@@ -141,7 +151,7 @@ class Contracts(unittest.TestCase):
         loop=next(x for x in ast.walk(cls) if isinstance(x,ast.For) and isinstance(x.iter,ast.Attribute) and x.iter.attr=='waiting_queue' and any(isinstance(y,ast.Name) and y.id=='policy_diagnostics' for y in ast.walk(x)))
         E=Enum('AddReqResult','CONTINUE NO_TOKEN OTHER')
         code=compile(ast.fix_missing_locations(ast.Module(body=[loop],type_ignores=[])),'<production-loop>','exec')
-        for scenario in ('admit','pass_budget','lora','pooling','slots','prefetch','reissue','staging','reject','continue_reject'):
+        for scenario in ('admit','admit_no_token','admit_other','pass_budget','lora','pooling','slots','prefetch','reissue','staging','reject','continue_reject'):
             outputs=[]
             for enabled in (False,True):
                 calls=[];r=request('candidate');r.kv=NS(holds_mamba=False,mamba_cow_src_index=None,mamba_needs_clear=False)
@@ -152,7 +162,7 @@ class Contracts(unittest.TestCase):
                 def add(req,**kwargs):
                     calls.append('add')
                     if scenario not in ('reject','continue_reject'):adder.can_run_list.append(req)
-                    return E.NO_TOKEN if scenario=='reject' else E.CONTINUE
+                    return E.NO_TOKEN if scenario in ('reject','admit_no_token') else E.OTHER if scenario=='admit_other' else E.CONTINUE
                 adder.add_one_req=add
                 tc=NS(check_prefetch_progress=lambda _:readiness('prefetch',scenario!='prefetch'),pop_prefetch_loaded_span=lambda _:(0,0))
                 r.time_stats.observe_storage_prefetch_ready=lambda _:None;r.time_stats.observe_storage_staging_ready=lambda _:None
@@ -164,7 +174,15 @@ class Contracts(unittest.TestCase):
                 exec(code,ns)
                 outputs.append((calls,[getattr(q,'rid','existing') for q in can_run],batch.batch_is_full))
                 if enabled:
-                    p.finish();self.assertEqual(sum(v['count'] for v in rows[0]['visits'].values()),1)
+                    p.finish(scan_complete=True);self.assertEqual(sum(v['count'] for v in rows[0]['visits'].values()),1)
+                    end=rows[0]['pass_end']
+                    expected='pass_budget_stop' if scenario=='pass_budget' else 'request_slots_stop' if scenario=='slots' else 'adder_result' if scenario in ('reject','admit_no_token','admit_other') else 'queue_scan_exhausted'
+                    self.assertEqual(end['cause'],expected)
+                    if expected=='adder_result':
+                        self.assertEqual(end['candidate_admitted'],scenario!='reject')
+                        self.assertEqual(end['adder_result'],'other' if scenario=='admit_other' else 'no_token')
+                    self.assertEqual(end['visited_candidates'],1)
+                    self.assertEqual(end['unvisited_candidates'],0)
             self.assertEqual(*outputs,scenario)
 
 

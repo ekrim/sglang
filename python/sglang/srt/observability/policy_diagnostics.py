@@ -103,7 +103,26 @@ class PolicyPass:
         self.record.setdefault("continuation", {}).update(
             admitted=bool(admitted), admitted_tokens=req.extend_len if admitted else 0)
 
-    def finish(self):
+    def end(self, cause, *, adder_result=None, candidate_admitted=None):
+        assert cause in {"pass_budget_stop", "request_slots_stop", "adder_result", "queue_scan_exhausted"}
+        assert "pass_end" not in self.record
+        values = dict(cause=cause)
+        if adder_result is not None:
+            assert adder_result in {"no_token", "other"}
+            values["adder_result"] = adder_result
+        if candidate_admitted is not None:
+            values["candidate_admitted"] = bool(candidate_admitted)
+        self.record["pass_end"] = values
+
+    def finish(self, *, scan_complete=False):
+        if scan_complete and "pass_end" not in self.record:
+            self.end("queue_scan_exhausted")
+        if "pass_end" in self.record:
+            visited = sum(v["count"] for v in self.visits.values())
+            self.record["pass_end"].update(
+                visited_candidates=visited,
+                unvisited_candidates=max(0, self.record["queue_count"] - visited),
+            )
         self.record.update(queue=dict(self.queue), age_bands=dict(self.age_bands),
                            work_bands=dict(self.work_bands), visits=self.visits)
         if self.oldest is not None:
