@@ -1,6 +1,6 @@
-# Proposed bounded scheduling-policy diagnostics
+# Bounded scheduling-policy diagnostics
 
-Status: design only. No new event in this document is implemented, enabled or present in R6/R7. This refines campaign gap G003 and the `prefill-ordering-and-aged-queues` decision rule. Do not infer current behavior from a proposed field.
+Status: implemented, default off, with CPU behavior contracts passing. Full serving validation and overhead measurement remain pending. No new event here is present in R6/R7. This refines campaign gap G003 and the `prefill-ordering-and-aged-queues` decision rule. Do not infer current behavior from a proposed field.
 
 The question is whether old requests are repeatedly bypassed by ordering, held by admission readiness, or progressing through long continuation work. Current first-forward histograms omit requests that are still waiting and later continuation/retraction waits. Gate encounter counts do not measure exposed wait.
 
@@ -15,7 +15,7 @@ The question is whether old requests are repeatedly bypassed by ordering, held b
 
 CPU examples executed the actual four sorting/cost methods and verified their ASTs match frozen source4e6e7f8. The output-bearing example is synthetic, not observed workload incidence. Scheduler lifecycle/ordering statements above are source audits, not runtime timing measurements.
 
-## Proposed observations
+## Implemented observations
 
 | Observation | Population and collection point | Fields and limits |
 |---|---|---|
@@ -29,10 +29,24 @@ Sampling is opt-in and rate-limited independently of per-candidate visits. Use o
 
 Aggregates lose correlation between maximum age and maximum work. Selected-head paired values help, but do not identify which oldest request was bypassed. If paired oldest-age/work is needed, accumulate it during the same sampled key evaluation; do not add a separate scan. A non-deferred or visited request is still not proof of eventual admission or execution.
 
-## Validation before any deployment
+## Validation and deployment
 
 Use production-method contracts to compare exact request order, return values, cache-touch counts and continuation limits with diagnostics off/on across empty queues, equal-key ties, duplicate-prefix deferral, cached work, output-bearing/retracted cases and page-budget boundaries. Unknown timestamps and reset counters must not manufacture age. Check that cancellation removes a request from later snapshots and that reentry starts a new episode without claiming lifetime wait.
 
 Measure sampled-pass overhead across realistic queue sizes and ensure disabled mode adds no allocation, clock or scan. Then run a separate declared serving instrumentation trial, retaining source/image/workload identity and canonical replay rules. GPU/full-serving overhead and effect on ordering are unvalidated until that trial; unit checks alone are insufficient.
 
 These observations would support an explanation, not uniquely prove causation. For example, old non-deferred candidates plus earlier inexpensive admissions can motivate a policy trial; old candidates repeatedly failing staging checks instead motivate cache-readiness investigation. Compare finalized tails, cancellations, trajectory progress and full-run throughput before accepting either diagnosis.
+
+## Runtime contract
+
+Set SGLANG_TUNING_POLICY_INTERVAL=10 for a sampled pass at most once per10seconds per scheduler. A tuning_policy_config startup line identifies the resolved policy and interval. tuning_policy_pass is a standalone JSON record retaining paired fields from one pass; it is not aggregated into TuningRecorder windows. Context identifies the process/ranks. Policies other than SPF/HRRN are unsupported and silent. The main unified prefill admission path is instrumented; specialized paths are not covered.
+
+Queue age/work bands use exclusive upper bounds: age1/10/60/300/1200/inf seconds, work1/1024/16384/65536/inf tokens. Omitted bands contain no members in that sampled population; missing samples/unknown ages are not zero. Oldest age is paired with work and prefix-deferral state. Per-reason candidate oldest age/work is also paired. Visits evaluate work using the same formula at visit completion; prefix initialization may have updated the estimate since sorting.
+
+Candidate reasons: pass_budget_stop, lora_skip, pooling_skip, request_slots_stop, prefetch_pending, prefetch_reissued, staging_pending, admitted, not_admitted_continue/no_token/other. Adder result categories alone do not identify the underlying gate. Each visited candidate gets one outcome; stopping leaves the remainder unvisited. Admission is established by actual appended object identity, not the adder return value. A continuing request is separately checked against the adder list and reports actual extend_len. Returned policy cap/reserved tokens come from the existing calculation.
+
+CPU tests execute production sorting and continuation methods plus the actual admission loop with fake resources. They check ties, fully cached/output-bearing/deferred requests, unchanged order/readiness calls, all skip/stop categories, episode reset/cancellation/unknown age, cap boundaries, disabled-clock silence, sampling cadence and log-sink failure isolation. These do not substitute for full serving integration or measure total application overhead.
+
+## CPU overhead check
+
+On the login CPU,200 synthetic SPF sorts per case compared frozen4e6e7f8, diagnostics disabled, and one sampled pass including JSON serialization. At queue32/128/512, baseline medians were16.14/60.82/257.77us; disabled16.11/62.59/262.05us; sampled113.61/410.51/1602.47us. Sampled p95 was234.37/683.98/2058.39us. These are local synthetic measurements, not ARM scheduler or end-to-end overhead. Actual sink I/O and candidate loop are excluded. Full replay must establish coverage and practical overhead before a tuning decision.

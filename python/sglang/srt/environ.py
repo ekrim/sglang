@@ -481,6 +481,8 @@ class Envs:
     SGLANG_TUNING_CUDA_ALLOCATOR_STATS = EnvBool(False)
     # One CPU-metadata receipt per process-local MegaMoE buffer cache miss.
     SGLANG_TUNING_MOE_BUFFER_STATS = EnvBool(False)
+    # Sample existing SPF/HRRN sorting/admission passes; zero disables.
+    SGLANG_TUNING_POLICY_INTERVAL = EnvFloat(0.0)
     SGLANG_TRACE_LOGITS_E2E = EnvBool(False)
     SGLANG_TRACE_LOGITS_E2E_SYNC = EnvBool(False)
     SGLANG_TRACE_SAMPLER_E2E = EnvBool(False)

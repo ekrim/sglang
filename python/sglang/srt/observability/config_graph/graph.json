@@ -3157,8 +3157,8 @@
         "Unified reentry resets both queue-entry time and arrival token counter; current-episode age is not cumulative lifetime starvation. Output-bearing/retracted work can have different HRRN/SPF cost estimates, but incidence must be observed before assigning performance impact."
       ],
       "hypothesis": "Under sustained mixed-work queues, ordering can favor repeated cheap admissions while expensive requests wait, hurting trajectory progress and tails. A different policy may improve fairness but reduce cache locality or useful throughput.",
-      "next_test": "Return to R6/SPF for subsequent throughput experiments. Before increasing compute/workspace budgets again, establish actual serving MegaMoE buffer keys/bytes and native allocator behavior with the separately checked optional diagnostics; full serving integration and overhead remain unvalidated. The next trial has not yet been selected or launched. Do not raise the request-row cap from these observations; sampled active work remains below the configured cap.",
-      "remaining_gap": "Existing logs omit current queue episode-age/work distributions, pre-admission readiness and continuation reservation. Proposed bounded observations in POLICY_DIAGNOSTICS.md separate these populations and preserve missing/disabled states; they are not implemented or deployed.",
+      "next_test": "Deploy a separately declared R6/SPF instrumentation replay with policy interval10 seconds and optional memory receipts. Verify all-rank producer status, finite/count-consistent records, actual serving buffer keys and complete canonical replay. Compare throughput and phase service with R6 while retaining repeat/node/cache uncertainty. Only then select a tuning intervention.",
+      "remaining_gap": "Bounded queue, candidate-visit and continuation observations are now implemented and CPU-tested, default off; full serving integration and overhead remain unvalidated. Current episode age omits earlier episodes; sampled visits exclude unvisited candidates. No critical-path duration or unique causal attribution is claimed.",
       "evidence": "R7 completed the canonical full-hour HRRN trial: 306,019.90659 total TPS/GPU and 2,385.34925 output TPS/GPU, 15.7112% below R6. Retain R6/SPF as the best local throughput configuration; reject this HRRN configuration for the throughput objective. No IBPL submission. Across all four quarters versus R6, computed prefill changed -0.10/-0.68/-1.19/-1.33%, while decode service fell 14.02/21.52/15.87/21.87% and mean active work fell 12.68/21.70/15.88/20.09%. Mean queues rose 77.32/139.81/136.74/122.53%. Decode graph steps changed only -1.52/-0.91/-1.18/-1.91%. Similar compute and step cadence sustained smaller active batches and less decode progress throughout the replay. Ordering/continuation is a supported candidate mechanism, not uniquely established causation; cache reuse, readiness and realized closed-loop mix remain confounders. R7 TTFT p50/p95/p99 was 5.784869/54.381371/249.695625 seconds versus R6 0.866107/5.885721/49.292392. Maximum completed TTFT improved from 3127.624 to 899.663 seconds, while drain cancellations increased 117 to 148. User speed p10/p50 fell from 75.82923/83.01271 to 75.06397/82.43866 tokens/s. This is not universal latency dominance; improving the worst completed wait did not improve throughput or typical latency."
     },
     {
@@ -3253,6 +3253,45 @@
           "anchor": "_MEGA_MOE_SYMM_BUFFER[key] = buf"
         }
       ]
+    },
+    {
+      "id": "config.SGLANG_TUNING_POLICY_INTERVAL",
+      "kind": "environment",
+      "name": "SGLANG_TUNING_POLICY_INTERVAL",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_TUNING_POLICY_INTERVAL"
+      }
+    },
+    {
+      "id": "log.policy_pass",
+      "kind": "log_line",
+      "name": "tuning_policy_pass",
+      "source": {
+        "path": "python/sglang/srt/observability/policy_diagnostics.py",
+        "anchor": "tuning_policy_pass %s"
+      },
+      "availability": "Default off; SGLANG_TUNING_POLICY_INTERVAL positive seconds. Unified scheduler SPF/HRRN passes only. One rate-limited sample at an existing sorting/admission pass, not a heartbeat. CPU contracts passed; serving integration/overhead pending. Absent in R6/R7.",
+      "semantics": "Paired oldest current queue-episode age/work, selected-head age/work, fixed age/work bands and prefix-deferred/output-bearing/previously-forwarded counts from the existing sorting keys. Candidate reason summaries reflect only actually visited candidates, not unvisited requests or unique requests over time. Existing readiness results reused. Continuation reports actual returned policy cap, calculated reserved tokens and admitted extend tokens. No cap is not zero capacity.",
+      "limitations": [
+        "Episode timestamps reset on reentry; no lifetime starvation claim.",
+        "Candidate work is evaluated at visit completion and may differ from the earlier sorted estimate after prefix initialization.",
+        "Queue snapshot precedes readiness checks; queued/sorted does not mean eligible.",
+        "Samples can miss brief events; earlier cadence/capacity gates prevent sampling.",
+        "Policy cap applicability includes the minimum-budget condition; reserved tokens omitted when not calculated.",
+        "not_admitted_other is an adder result category, not a unique causal gate; correlate existing gate events.",
+        "No request identifiers or cache addresses; aggregates cannot reconstruct trajectories."
+      ]
+    },
+    {
+      "id": "log.policy_producer_config",
+      "kind": "log_line",
+      "name": "tuning_policy_config",
+      "source": {
+        "path": "python/sglang/srt/managers/schedule_policy.py",
+        "anchor": "tuning_policy_config"
+      },
+      "semantics": "Once per policy construction when tuning or policy sampling is enabled: resolved policy, sampling interval and supported status; allocator and MegaMoE flags are requested settings, not proof of successful emission or complete pool coverage."
     }
   ],
   "edges": [
@@ -4771,6 +4810,31 @@
     {
       "source": "mechanism.prefill_ordering",
       "target": "event.prefill.chunk_slot",
+      "relation": "observed_by"
+    },
+    {
+      "source": "config.SGLANG_TUNING_POLICY_INTERVAL",
+      "target": "mechanism.prefill_ordering",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.prefill_ordering",
+      "target": "log.policy_pass",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "log.policy_pass",
+      "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "log.policy_pass",
+      "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "config.SGLANG_TUNING_POLICY_INTERVAL",
+      "target": "log.policy_producer_config",
       "relation": "observed_by"
     }
   ]

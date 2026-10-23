@@ -4070,12 +4070,19 @@ class Scheduler(
             tuning_recorder.observe("prefill.request_slots")
             return None, running_batch
 
+        # A sampled pass reuses existing sort keys and readiness outcomes.
+        policy_diagnostics = self.policy.policy_diagnostics.begin(
+            self.policy.policy.value, len(self.waiting_queue)
+        )
         # Get priority queue
         self.policy.calc_priority(
             self.waiting_queue,
             running_batch,
             processed_tokens=self.processed_tokens_counter,
+            diagnostics=policy_diagnostics,
         )
+        if policy_diagnostics is not None and self.waiting_queue:
+            policy_diagnostics.head(self.waiting_queue[0])
 
         if TEST_RETRACT and running_bs > TEST_RETRACT_NO_PREFILL_BS:
             # If we are testing retraction and the running batch size exceeds
@@ -4125,8 +4132,15 @@ class Scheduler(
                 self.waiting_queue,
                 adder.rem_chunk_tokens or 0,
                 self.page_size,
+                diagnostics=policy_diagnostics,
             )
+            continuation_req = self.chunked_req
             self.chunked_req = adder.add_chunked_req(self.chunked_req)
+            if policy_diagnostics is not None:
+                policy_diagnostics.continuation_admitted(
+                    continuation_req,
+                    bool(adder.can_run_list) and adder.can_run_list[-1] is continuation_req,
+                )
 
         if self.enable_lora:
             running_loras = {
@@ -4150,8 +4164,12 @@ class Scheduler(
             # A spent pass budget admits no one, even before the first
             # candidate: the resumed chunk or mixed decode rows can spend it.
             if adder.budget_state() == AddReqResult.OTHER:
+                if policy_diagnostics is not None:
+                    policy_diagnostics.visit(req, "pass_budget_stop")
                 break
             if self.enable_lora and not self.can_schedule_lora_req(req, running_loras):
+                if policy_diagnostics is not None:
+                    policy_diagnostics.visit(req, "lora_skip")
                 continue
 
             # A forward batch runs one pooling mode, so setwise readout requests
@@ -4161,6 +4179,8 @@ class Scheduler(
                 (req.token_indices_to_pool is not None)
                 != (adder.can_run_list[0].token_indices_to_pool is not None)
             ):
+                if policy_diagnostics is not None:
+                    policy_diagnostics.visit(req, "pooling_skip")
                 continue
 
             running_bs = len(running_batch.reqs)
@@ -4181,6 +4201,8 @@ class Scheduler(
                 if not self.enable_priority_preemption or not adder.preempt_to_schedule(
                     req
                 ):
+                    if policy_diagnostics is not None:
+                        policy_diagnostics.visit(req, "request_slots_stop")
                     break
 
             if self.enable_hicache_storage or self.enable_lmcache:
@@ -4191,6 +4213,8 @@ class Scheduler(
                 if not prefetch_done:
                     # skip staging requests that are ongoing prefetch
                     tuning_recorder.observe("prefill.prefetch_pending")
+                    if policy_diagnostics is not None:
+                        policy_diagnostics.visit(req, "prefetch_pending")
                     continue
                 # Pop the L3-loaded span. Unified cache exposes its absolute
                 # start so cache-mode L2/L3 attribution survives L3-tail eviction.
@@ -4208,18 +4232,31 @@ class Scheduler(
             if self.enable_hicache_storage and (
                 self._prefetch_after_device_hit_loss(req)
             ):
+                if policy_diagnostics is not None:
+                    policy_diagnostics.visit(req, "prefetch_reissued")
                 continue
             if self.enable_hicache_storage and buffer_pipeline is not None:
                 staging_ready = buffer_pipeline.prepare_staged_prefetch(req)
                 req.time_stats.observe_storage_staging_ready(staging_ready)
                 if not staging_ready:
                     tuning_recorder.observe("prefill.staging_pending")
+                    if policy_diagnostics is not None:
+                        policy_diagnostics.visit(req, "staging_pending")
                     continue
             res = adder.add_one_req(
                 req,
                 has_chunked_req=(self.chunked_req is not None),
                 truncation_align_size=self.truncation_align_size,
             )
+
+            if policy_diagnostics is not None:
+                admitted = bool(adder.can_run_list) and adder.can_run_list[-1] is req
+                reason = "admitted" if admitted else {
+                    AddReqResult.CONTINUE: "not_admitted_continue",
+                    AddReqResult.NO_TOKEN: "not_admitted_no_token",
+                    AddReqResult.OTHER: "not_admitted_other",
+                }[res]
+                policy_diagnostics.visit(req, reason)
 
             if self.enable_lora:
                 running_loras.add(req.lora_id)
@@ -4246,6 +4283,9 @@ class Scheduler(
                         )
                         req.kv.mamba_pool_idx = None
                 break
+
+        if policy_diagnostics is not None:
+            policy_diagnostics.finish()
 
         if mamba_allocator is not None:
             mamba_allocator.alloc_group_end()

@@ -5,6 +5,7 @@ import logging
 from sglang.srt.environ import envs
 from sglang.srt.managers.prefill_delayer import PrefillDelayerSinglePassExecutor
 from sglang.srt.observability.tuning import recorder as tuning_recorder
+from sglang.srt.observability.policy_diagnostics import PolicySampler
 from sglang.srt.runtime_context import (
     get_disagg,
     get_exec,
@@ -202,6 +203,18 @@ class SchedulePolicy:
         self.enable_priority_scheduling = enable_priority_scheduling
         self.schedule_low_priority_values_first = schedule_low_priority_values_first
         self.priority_sign = 1 if schedule_low_priority_values_first else -1
+        self.policy_diagnostics = PolicySampler(
+            envs.SGLANG_TUNING_POLICY_INTERVAL.get(), context=tuning_recorder.context
+        )
+        if tuning_recorder.enabled or self.policy_diagnostics.enabled:
+            logger.info(
+                "tuning_policy_config policy=%s interval_seconds=%s "
+                "supported=%s allocator_requested=%s moe_buffer_requested=%s",
+                self.policy.value, self.policy_diagnostics.interval,
+                self.policy.value in {"shortest-prefill-first", "hrrn"},
+                envs.SGLANG_TUNING_CUDA_ALLOCATOR_STATS.get(),
+                envs.SGLANG_TUNING_MOE_BUFFER_STATS.get(),
+            )
         self._shortest_prefill_calls = 0
         self._waiting_prefix_refresh_calls = 0
 
@@ -213,6 +226,7 @@ class SchedulePolicy:
         waiting_queue: List[Req],
         running_batch: Optional[ScheduleBatch] = None,
         processed_tokens: int = 0,
+        diagnostics=None,
     ) -> None:
         policy = self._determine_active_policy(waiting_queue)
 
@@ -243,11 +257,11 @@ class SchedulePolicy:
                 SchedulePolicy._sort_by_dfs_weight(waiting_queue, self.tree_cache)
             elif policy == CacheAwarePolicy.HRRN:
                 SchedulePolicy._sort_by_hrrn(
-                    waiting_queue, temporary_deprioritized, processed_tokens
+                    waiting_queue, temporary_deprioritized, processed_tokens, diagnostics
                 )
             elif policy == CacheAwarePolicy.SHORTEST_PREFILL_FIRST:
                 SchedulePolicy._sort_by_shortest_prefill(
-                    waiting_queue, temporary_deprioritized
+                    waiting_queue, temporary_deprioritized, diagnostics
                 )
                 self._shortest_prefill_calls += 1
                 if waiting_queue and self._shortest_prefill_calls % 128 == 1:
@@ -402,25 +416,29 @@ class SchedulePolicy:
 
     @staticmethod
     def _sort_by_shortest_prefill(
-        waiting_queue: List[Req], temporary_deprioritized: Set[int]
+        waiting_queue: List[Req], temporary_deprioritized: Set[int], diagnostics=None
     ) -> None:
-        # Prioritize short uncached prefills while deferring duplicate prefixes.
-        waiting_queue.sort(
-            key=lambda r: (
-                r.rid in temporary_deprioritized,
-                SchedulePolicy._shortest_prefill_work(r),
-                r.time_stats.wait_queue_entry_time,
-            )
-        )
+        # Reuse the existing key evaluation; no second queue scan.
+        def key(r):
+            deferred = r.rid in temporary_deprioritized
+            work = SchedulePolicy._shortest_prefill_work(r)
+            if diagnostics is not None:
+                diagnostics.queue_key(r, work, deferred)
+            return (deferred, work, r.time_stats.wait_queue_entry_time)
+
+        waiting_queue.sort(key=key)
 
     def shortest_prefill_chunk_limit(
-        self, chunked_req: Req, waiting_queue: List[Req], budget: int, page_size: int
+        self, chunked_req: Req, waiting_queue: List[Req], budget: int, page_size: int,
+        diagnostics=None,
     ) -> Optional[int]:
         """Cap the active prefill chunk to reserve tokens for shorter waiting requests."""
         if (
             self.policy != CacheAwarePolicy.SHORTEST_PREFILL_FIRST
             or budget < 2 * page_size
         ):
+            if diagnostics is not None:
+                diagnostics.reservation(budget=budget, applicable=False)
             return None
         remaining = len(chunked_req.full_untruncated_fill_ids) - chunked_req.prefix_len
         reserved = 0
@@ -431,9 +449,14 @@ class SchedulePolicy:
                 break
             reserved += charge
         if not reserved:
+            if diagnostics is not None:
+                diagnostics.reservation(budget=budget, applicable=True, reserved=0)
             return None
         # Page alignment keeps continuation boundaries allocator-compatible.
-        return (budget - reserved) // page_size * page_size
+        cap = (budget - reserved) // page_size * page_size
+        if diagnostics is not None:
+            diagnostics.reservation(budget=budget, applicable=True, reserved=reserved, cap=cap)
+        return cap
 
     @staticmethod
     def _sort_by_longest_prefix(
@@ -459,6 +482,7 @@ class SchedulePolicy:
         waiting_queue: List[Req],
         temporary_deprioritized: Set[int],
         processed_tokens: int,
+        diagnostics=None,
     ) -> None:
         """Highest Response Ratio Next, with token-based aging.
 
@@ -478,6 +502,8 @@ class SchedulePolicy:
 
         def _key(r: Req):
             rid = r.rid
+            if diagnostics is not None:
+                diagnostics.queue_key(r, SchedulePolicy._uncached_len(r), rid in temporary_deprioritized)
             if rid in temporary_deprioritized:
                 return (float("inf"), rid)
             uncached = SchedulePolicy._uncached_len(r)
