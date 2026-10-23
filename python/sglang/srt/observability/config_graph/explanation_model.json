@@ -168,7 +168,7 @@
         "config.SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT",
         "config.SGLANG_NUMA_BIND_V2"
       ],
-      "observation": "Host-table startup shows lower huge-page coverage on some ranks, optionally with MADV_COLLAPSE errno12.",
+      "observation": "Host-table startup shows lower huge-page coverage on some ranks, optionally with a MADV_COLLAPSE error. Preserve the actual errno; do not assume all failures share a cause.",
       "diagnosis": "Actual table backing differs despite identical layout settings; address translation and placement may confound rank latency.",
       "alternatives": [
         "Concurrent snapshot persistence/checksum or loader reads repopulate file cache.",
@@ -184,7 +184,8 @@
       "runtime_evidence": [
         "native-r0 server.log at2026-10-22T17:28:33Z..17:28:35Z: layer14 rank2=30%, rank3=32%, ranks0/1=100%; immutable snapshot persistence still active.",
         "cadence18-hour-r5 startup onlyris0032 at2026-10-22T22:07:16Z..22:07:17Z: layer1 rank0/1/2/3=76/70/83/85%, layer14=11/0/95/83%, collapseerrno12. Image/model hashing and staging completed before launch. Contrast priorfullruns rounded100%; startup receipt alone doesnotmeasure lookup slowdown. See campaign evidence/cadence18-hour-r5-startup-backing.json.",
-        "R5b fresh startup at2026-10-22T22:14:57Z..22:14:58Z: all8 table/rank receipts rounded100% (24064MiB huge outof24170/24171MiB resident). Backing improved on the same node after failedR5 shutdown, but allocator/loader history changed; no isolated lookup-speed claim."
+        "R5b fresh startup at2026-10-22T22:14:57Z..22:14:58Z: all8 table/rank receipts rounded100% (24064MiB huge outof24170/24171MiB resident). Backing improved on the same node after failedR5 shutdown, but allocator/loader history changed; no isolated lookup-speed claim.",
+        "R6 startup on lyris0237 at 2026-10-23T00:04:57Z..00:05:23Z: rank2 layer14 has 22528 MiB huge / 24171 MiB resident (93% rounded), with MADV_COLLAPSE errno22; the other seven table/rank receipts round to100%. Staging was complete. This differs from R5b and is an attribution limitation, not a measured slowdown."
       ]
     },
     {
