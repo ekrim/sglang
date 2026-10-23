@@ -1498,20 +1498,21 @@
       "kind": "mechanism",
       "title": "Graph actually used versus enabled",
       "source": {
-        "path": "python/sglang/srt/model_executor/runner/prefill_cuda_graph_runner.py",
-        "anchor": "def can_replay_locally"
+        "path": "python/sglang/srt/model_executor/model_runner.py",
+        "anchor": "def _forward_raw"
       },
       "behavior": "Graph replay requires eligible shape, context, features, backend and DP agreement. Requested enablement does not imply covered AgentX steps.",
       "conditions": [
         "Actual dispatch counters at ModelRunner; local eligibility can also be checked during scheduling."
       ],
       "confounders": [
-        "Warmup/capture vs serving; capture memory shrinks KV; mixed modes; replay tail; runner may execute some operations eagerly."
+        "Warmup/capture vs serving; capture memory shrinks KV; mixed modes; replay tail; runner may execute some operations eagerly.",
+        "Decode graph eligibility with MLP TP gather uses max(original_global_num_tokens_cpu), whose entries are raw per-rank request counts. One oversized rank can make target verification eager across the group. Server request cap and capture cap are separate controls; inspect resolved per-rank limits."
       ],
-      "hypothesis": "Wider capture coverage may remove CPU launch overhead but costs memory; benefit requires actual replay on the workload.",
-      "next_test": "Verify constructed runner logs and dispatch after warmup, diagnose first eligibility failure; compare paired graph on/off with fixed capacities.",
+      "hypothesis": "Keeping effective DP batch within supported capture coverage can avoid slower eager execution. Raising capture coverage costs memory; capping admitted rows costs concurrency. Neither is automatically a throughput win.",
+      "next_test": "After a complete run confirms relevant fallback, choose one fresh intervention: constrain resolved admitted rows to verified capture coverage, or enlarge capture coverage after validating memory cost. Hold trajectory load and other controls fixed where possible; verify replay recovery and canonical throughput/latency.",
       "remaining_gap": "Eligibility event counts can include schedule-time and forward-time checks; cannot divide them by forwards. Not all decode fallback reasons are instrumented. Dispatch is not proof every layer used a graph.",
-      "evidence": "code-audited; causal performance effect requires paired experiment"
+      "evidence": "R10 windows28.5\u201331.5min: rank3 sampled active83/81 exceeds observed capturemax64; target decode-result graph steps collapse to0.05/0persecond and non-graph steps4.46/4.52 on allranks. Existing forward.draft.eager batch summaries report65\u201388 in the first affected emission cohort. Partial recovery follows in31.5\u201333min. This supports DP-wide coverage pressure, not unique first-failed-predicate or isolated CPU cost attribution. Full R10 result pending."
     },
     {
       "id": "config.cuda_graph_backend_prefill",
@@ -5106,6 +5107,11 @@
       "source": "mechanism.dsv4_host_sizing",
       "target": "log.dsv4_hicache_size_unsupported",
       "relation": "observed_by"
+    },
+    {
+      "source": "config.max_running_requests",
+      "target": "mechanism.graph_dispatch",
+      "relation": "controls_or_constrains"
     }
   ]
 }

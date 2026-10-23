@@ -118,7 +118,8 @@
       "id": "decode-graph-coverage",
       "graph_nodes": [
         "mechanism.graph_dispatch",
-        "metric.cuda_graph_passes_total"
+        "metric.cuda_graph_passes_total",
+        "config.max_running_requests"
       ],
       "observation": "Eager dispatch grows under high active batch sizes despite a configured decode graph runner.",
       "diagnosis": "Decode/verify graph coverage may be insufficient, but the eager counter also includes prefill and idle paths.",
@@ -129,12 +130,13 @@
         "Sampled local running-request counts can miss transient or DP-wide graph input sizes; non-size eligibility gates can fail below the configured cap."
       ],
       "check": "Use existing CUDA graph counters with producer-defined labels and actual phase context; obtain mode-specific dispatch evidence before attributing eager events to decode. In DSpark, decode-result eligibility comes from target verification, not all draft passes or layer-tail replay. Trace decode_cuda_graph_runner.can_run_graph before attributing a fallback to max_bs: overrides, layout/width, supported shape, DP eligibility, encoder, TBO and ngram conditions can reject it. DP gather can use the maximum DP batch size rather than a sampled local request gauge. Preserve absent lazy-created series as unknown; count fractions do not establish exposed time.",
-      "action": "Only after confirming uncovered decode/verify sizes, test a larger capture cap with the actual KV-memory cost recorded.",
-      "expected": "Increased relevant graph use and lower exposed host overhead.",
-      "reject_if": "Extra captures shrink KV enough to harm reuse or relevant graph use does not rise.",
+      "action": "After full-run evidence confirms relevant uncovered decode/verify sizes, choose one fresh trial: lower the resolved per-rank admitted-request cap within verified capture coverage, or increase capture coverage after validating added memory/KV cost. Keep trajectory load and other controls fixed when testing this interaction. Do not change the active replay.",
+      "expected": "Relevant graph replay recovers with useful token service and acceptable canonical throughput/latency; a row-cap trial may trade batch parallelism for faster steps.",
+      "reject_if": "Replay does not recover, the unsupported size/gate remains, or lost batch parallelism/KV retention makes the qualified throughput/latency tradeoff worse.",
       "status": "Ambiguous signal: do not auto-change from aggregate eager counts",
       "runtime_evidence": [
-        "R10 early measurement: decode_none first appears at profiling+349.118s with cumulative4perrank, then reaches14perrank by+579.121s. The observed endpoint delta is10perrank over230.002s; no invented zero baseline for earlier absence. The count establishes some target-result non-graph execution, not its failed predicate or critical-path cost. R10 remains active and unchanged; no capture-cap trial selected from this evidence."
+        "R10 early measurement: decode_none first appears at profiling+349.118s with cumulative4perrank, then reaches14perrank by+579.121s. The observed endpoint delta is10perrank over230.002s; no invented zero baseline for earlier absence. The count establishes some target-result non-graph execution, not its failed predicate or critical-path cost. R10 remains active and unchanged; no capture-cap trial selected from this evidence.",
+        "R10 Q2 final window28.5\u201330min: sampled rank3active reaches83 versus observed capturemax64; allranks decodegraph0.05/s and decode_none4.462/s, versus~20.2graphsteps/s in27\u201328.5min. Q3firstwindow30\u201331.5min has0graph/4.525nongraphsteps/s and rank3max81;31.5\u201333min partially recovers~10.125graph/2.287nongraphsteps/s. Existing draft-eager emission summaries showbatch65\u201388. No Q2native retry/OOMdelta. Source DP graph sizing takes max raw per-rank request count; explicit server cap divides byattn_dp_size. This supports a cap/coverage interaction but does not isolate first failed predicate or eager CPU versus GPU cost. Full run and next intervention pending."
       ]
     },
     {
