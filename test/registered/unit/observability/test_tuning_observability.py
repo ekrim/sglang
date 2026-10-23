@@ -11,10 +11,12 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import sys
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace as NS
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[4]
 SRT = ROOT / "python/sglang/srt"
@@ -182,6 +184,58 @@ class AllocatorSnapshotTest(unittest.TestCase):
         result = tuning.cuda_allocator_snapshot(cuda)
         self.assertEqual(result["status"], "partial")
         self.assertEqual(result["values"], {"active_bytes": 110, "inactive_split_bytes": 30})
+
+
+class MoEBufferReceiptTest(unittest.TestCase):
+    def test_only_cache_misses_emit_and_buffer_identity_is_unchanged(self):
+        for enabled in (False, True):
+            factory = Mock(side_effect=lambda *a, **k: object())
+            emit = Mock()
+            library = NS(get_num_sms=lambda: 132, get_symm_buffer_for_mega_moe=factory)
+            ns = production(
+                "layers/moe/mega_moe.py", {"_get_mega_moe_symm_buffer"},
+                dict(_MEGA_MOE_SYMM_BUFFER={},
+                     _configure_mega_moe_deep_gemm_num_sms=lambda _: nullcontext(),
+                     envs=NS(SGLANG_TUNING_MOE_BUFFER_STATS=NS(get=lambda: enabled))),
+            )
+            group = NS(size=lambda: 4)
+            with patch.dict(sys.modules, {
+                "deep_gemm": library,
+                "sglang.srt.observability.tuning": NS(log_mega_moe_buffer=emit),
+            }):
+                get = ns["_get_mega_moe_symm_buffer"]
+                first = get(group, 384, 20480, 6, 5120, 2304, mma_type="fp8xfp4")
+                again = get(group, 384, 20480, 6, 5120, 2304, mma_type="fp8xfp4")
+                second = get(group, 128, 20480, 3, 5120, 2304, mma_type="fp8xfp4")
+            self.assertIs(first, again)
+            self.assertIsNot(first, second)
+            self.assertEqual(factory.call_count, 2)
+            self.assertEqual(emit.call_count, 2 if enabled else 0)
+            if enabled:
+                self.assertEqual(emit.call_args.kwargs, {
+                    "requested_token_cap": 20480, "group_size": 4, "num_sms": 132,
+                })
+
+    def test_cpu_metadata_records_aligned_cap_and_bytes_without_tensor_reads(self):
+        buffer = NS(num_max_tokens_per_rank=256, num_experts=384, num_topk=6,
+                    hidden=5120, intermediate_hidden=2304, num_shared_experts=1,
+                    mma_type="fp8xfp4", activation="swiglu", buffer=NS(nbytes=4096))
+        with patch.object(tuning.logger, "info") as emit:
+            tuning.log_mega_moe_buffer(buffer, requested_token_cap=129, group_size=4, num_sms=132)
+        record = json.loads(emit.call_args.args[1])
+        self.assertEqual(record["status"], "ok")
+        self.assertEqual(record["values"]["requested_token_cap"], 129)
+        self.assertEqual(record["values"]["resolved_token_cap"], 256)
+        self.assertEqual(record["values"]["buffer_bytes"], 4096)
+        self.assertEqual(record["mma_type"], "fp8xfp4")
+        self.assertNotIn("group_id", record)
+
+    def test_missing_metadata_is_unknown_and_does_not_raise(self):
+        with patch.object(tuning.logger, "info") as emit:
+            tuning.log_mega_moe_buffer(object(), requested_token_cap=128, group_size=4, num_sms=132)
+        record = json.loads(emit.call_args.args[1])
+        self.assertEqual(record["status"], "unavailable")
+        self.assertNotIn("values", record)
 
 
 class BudgetTest(unittest.TestCase):

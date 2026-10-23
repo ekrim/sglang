@@ -479,6 +479,8 @@ class Envs:
     SGLANG_ENABLE_METRICS_DP_ATTENTION = EnvBool(False)
     # CPU allocator counters at tuning-observation flushes; no device sync.
     SGLANG_TUNING_CUDA_ALLOCATOR_STATS = EnvBool(False)
+    # One CPU-metadata receipt per process-local MegaMoE buffer cache miss.
+    SGLANG_TUNING_MOE_BUFFER_STATS = EnvBool(False)
     SGLANG_TRACE_LOGITS_E2E = EnvBool(False)
     SGLANG_TRACE_LOGITS_E2E_SYNC = EnvBool(False)
     SGLANG_TRACE_SAMPLER_E2E = EnvBool(False)

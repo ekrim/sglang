@@ -3223,6 +3223,32 @@
       },
       "availability": "Implemented for a future deployment; CPU contracts verified, actual GPU behavior/overhead not yet validated. Requires CUDA target runner, positive tuning observation interval and SGLANG_TUNING_CUDA_ALLOCATOR_STATS=1. One snapshot per nonempty event-driven flush; absent by default.",
       "interpretation": "Native PyTorch CPU-side allocator counters at the emission endpoint: allocated/reserved/active/inactive-split bytes and cumulative allocation-retry/OOM counts. Not a window mean, peak or heartbeat. Status not_initialized/unsupported_backend/error has no values; partial omits unavailable/invalid fields instead of inventing zeros. Private/custom pools and external allocations may be excluded. Reserved-minus-allocated is not guaranteed reclaimable memory. Counter deltas require same process/rank and reset handling. No initialization, device sync, cache clearing or peak reset is requested by the sampler."
+    },
+    {
+      "id": "config.SGLANG_TUNING_MOE_BUFFER_STATS",
+      "name": "SGLANG_TUNING_MOE_BUFFER_STATS",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_TUNING_MOE_BUFFER_STATS"
+      }
+    },
+    {
+      "id": "log.moe_buffer_creation",
+      "kind": "log_line",
+      "name": "tuning_moe_buffer",
+      "source": {
+        "path": "python/sglang/srt/observability/tuning.py",
+        "anchor": "logger.info(\"tuning_moe_buffer %s\""
+      },
+      "availability": "Implemented for a future deployment; CPU contracts pass, GPU validation pending. SGLANG_TUNING_MOE_BUFFER_STATS=1 enables one receipt after a SGLang process-local MegaMoE buffer-cache miss. Independent of observation interval; cache hits are silent.",
+      "interpretation": "CPU metadata reports requested/aligned token cap, group size, experts/top-k/hidden/intermediate/shared-expert geometry, SMS, bounded MMA/activation kind and exposed tensor nbytes. Cache-miss source is not proof of a fresh physical allocation in the underlying library or allocator. Geometry alone is not a unique buffer identity: process-group identity is intentionally omitted, so do not deduplicate equal-shaped receipts or log addresses. Missing metadata yields unavailable without zero-valued sizes. Existing library creation may synchronize; this receipt adds no sizing query, tensor read, collective or device synchronization. Exposed bytes are not total transient/device memory.",
+      "source_audit": [
+        {
+          "path": "python/sglang/srt/layers/moe/mega_moe.py",
+          "anchor": "_MEGA_MOE_SYMM_BUFFER[key] = buf"
+        }
+      ]
     }
   ],
   "edges": [
@@ -4722,6 +4748,21 @@
       "source": "mechanism.kv_memory",
       "target": "log.cuda_allocator_snapshot",
       "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "config.SGLANG_TUNING_MOE_BUFFER_STATS",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "log.moe_buffer_creation",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.moe_backend",
+      "target": "log.moe_buffer_creation",
+      "relation": "observed_by"
     }
   ]
 }

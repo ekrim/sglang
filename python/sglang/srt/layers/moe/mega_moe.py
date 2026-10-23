@@ -154,6 +154,15 @@ def _get_mega_moe_symm_buffer(
                 activation="swiglu",
             )
             _MEGA_MOE_SYMM_BUFFER[key] = buf
+            if envs.SGLANG_TUNING_MOE_BUFFER_STATS.get():
+                from sglang.srt.observability.tuning import log_mega_moe_buffer
+
+                log_mega_moe_buffer(
+                    buf,
+                    requested_token_cap=num_max_tokens_per_rank,
+                    group_size=group.size(),
+                    num_sms=key[-1],
+                )
     return buf
 
 

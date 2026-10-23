@@ -222,6 +222,53 @@ def cuda_allocator_snapshot(cuda=None):
     }
 
 
+def log_mega_moe_buffer(buffer, *, requested_token_cap, group_size, num_sms):
+    """Describe a library-returned buffer using CPU metadata only.
+
+    Called only on a SGLang buffer-cache miss when explicitly enabled. Tensor
+    nbytes is the exposed buffer size, not total allocator/device memory. No
+    addresses, process-group IDs, tensor reads or extra sizing queries.
+    """
+    record = {
+        "schema_version": 1,
+        "context": recorder.context,
+        "emitted_at_unix": time.time(),
+        "source": "sglang_cache_miss",
+    }
+    try:
+        values = {
+            "requested_token_cap": requested_token_cap,
+            "resolved_token_cap": buffer.num_max_tokens_per_rank,
+            "group_size": group_size,
+            "num_experts": buffer.num_experts,
+            "topk": buffer.num_topk,
+            "hidden": buffer.hidden,
+            "intermediate_hidden": buffer.intermediate_hidden,
+            "shared_experts": buffer.num_shared_experts,
+            "num_sms": num_sms,
+            "buffer_bytes": buffer.buffer.nbytes,
+        }
+        if any(type(value) is not int or value < 0 for value in values.values()):
+            raise ValueError("Unavailable buffer metadata")
+        mma = buffer.mma_type
+        activation = buffer.activation
+        record.update(
+            status="ok",
+            values=values,
+            mma_type=(
+                mma if mma in {"fp8xfp4", "mxf4xmxf4", "nvfp4xnvfp4", "fp8xfp8"}
+                else "other"
+            ),
+            activation=(
+                activation if activation in {"swiglu", "swigluoai", "situ"}
+                else "other"
+            ),
+        )
+    except Exception:
+        record["status"] = "unavailable"
+    logger.info("tuning_moe_buffer %s", json.dumps(record, sort_keys=True))
+
+
 def configure(interval, *, allocator_sampler=None, **context):
     # Preserve object identity: call sites import this single object.
     recorder.__init__(
