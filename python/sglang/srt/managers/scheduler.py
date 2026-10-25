@@ -28,6 +28,8 @@ from functools import partial
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Set, Tuple, Union
 
+from sglang.srt.observability.pd_lifecycle import recorder as pd_lifecycle
+from sglang.srt.observability.pd_lifecycle import scheduler_heartbeat
 from sglang.srt.observability.tuning import recorder as tuning_recorder
 from sglang.srt.runtime_context import (
     SpawnRanks,
@@ -2181,6 +2183,7 @@ class Scheduler(
     @scheduler_stage_method(SCHEDULER_STAGE_PROCESS_REQUESTS)
     def process_input_requests(self, recv_reqs: List):
         now = time.monotonic()
+        scheduler_heartbeat(self, now)
         self.session_controller.maybe_reap(now)
 
         for recv_req in recv_reqs:
@@ -3488,6 +3491,7 @@ class Scheduler(
 
     def _release_aborted_request(self, req: Req) -> None:
         """Drop the cache-side state an aborted request left behind."""
+        pd_lifecycle.transition(req, "cancel_requested", origin="scheduler_cleanup")
         req.release_mm_inputs_on_abort()
         self.tree_cache.finish(req.cache_request_handle, CacheRequestOutcome.ABORT)
         if req.session is not None and req.session.streaming:
@@ -5715,6 +5719,7 @@ class Scheduler(
             for decode_req in self.disagg_decode_prealloc_queue.queue:
                 if recv_req.abort_all or decode_req.req.rid.startswith(recv_req.rid):
                     logger.debug(f"Abort prealloc queue request. {decode_req.req.rid=}")
+                    pd_lifecycle.transition(decode_req.req, "cancel_requested", origin="scheduler_abort")
                     decode_req.kv_receiver.abort()
                     if get_parallel().pp_size > 1:
                         prepare_abort(decode_req.req, "Aborted by AbortReq.")
@@ -5723,6 +5728,7 @@ class Scheduler(
             for decode_req in self.disagg_decode_transfer_queue.queue:
                 if recv_req.abort_all or decode_req.req.rid.startswith(recv_req.rid):
                     logger.debug(f"Abort transfer queue request. {decode_req.req.rid=}")
+                    pd_lifecycle.transition(decode_req.req, "cancel_requested", origin="scheduler_abort")
                     if decode_req.host_staged:
                         # Keep the host destination alive until prefill stops writing.
                         prepare_abort(decode_req.req, "Aborted by AbortReq.")
@@ -5730,6 +5736,7 @@ class Scheduler(
                     # The receiver arms drain-ack accounting before sending the
                     # ABORT (see CommonKVReceiver._send_abort_notification), so
                     # an ack racing back is never dropped.
+                    pd_lifecycle.transition(decode_req.req, "cancel_requested", origin="scheduler_abort")
                     decode_req.kv_receiver.abort()
 
             # Abort requests whose KV is already backed up for retraction.

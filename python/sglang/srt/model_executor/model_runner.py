@@ -18,13 +18,13 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
+import socket
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Union
 
 import torch
 import torch.distributed as dist
-
 from sglang.srt.configs.load_config import (
     _DEFAULT_LOAD_GROUP,
     LoadConfig,
@@ -462,11 +462,22 @@ class ModelRunner:
         # Stored for later use by alloc_memory_pool().
         self.init_torch_distributed()
         if not self.is_draft_worker:
+            from sglang.srt.observability.pd_lifecycle import (
+                configure as configure_pd_lifecycle,
+            )
             from sglang.srt.observability.tuning import (
                 configure,
                 cuda_allocator_snapshot,
             )
 
+            configure_pd_lifecycle(
+                role=get_disagg().disaggregation_mode,
+                worker=socket.gethostname(),
+                tp_rank=get_parallel().tp_rank,
+                pp_rank=get_parallel().pp_rank,
+                dp_rank=get_parallel().dp_rank,
+                attn_dp_rank=get_parallel().attn_dp_rank,
+            )
             configure(
                 get_observability().tuning_observation_interval,
                 allocator_sampler=(

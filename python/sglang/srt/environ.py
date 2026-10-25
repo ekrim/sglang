@@ -482,6 +482,11 @@ class Envs:
     # One CPU-metadata receipt per process-local MegaMoE buffer cache miss.
     SGLANG_TUNING_MOE_BUFFER_STATS = EnvBool(False)
     # Sample existing SPF/HRRN sorting/admission passes; zero disables.
+    # Opt-in PD state/ownership records; IDs stay out of metric labels.
+    SGLANG_PD_LIFECYCLE_INTERVAL = EnvFloat(0.0)
+    SGLANG_PD_LIFECYCLE_MAX_REQUESTS = EnvInt(4096)
+    SGLANG_PD_LIFECYCLE_MAX_EVENTS = EnvInt(1024)
+    SGLANG_PD_LIFECYCLE_SAMPLE_EVERY = EnvInt(1)
     SGLANG_TUNING_POLICY_INTERVAL = EnvFloat(0.0)
     SGLANG_TRACE_LOGITS_E2E = EnvBool(False)
     SGLANG_TRACE_LOGITS_E2E_SYNC = EnvBool(False)

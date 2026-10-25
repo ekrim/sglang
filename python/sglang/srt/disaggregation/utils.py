@@ -19,12 +19,12 @@ from typing import (
 import numpy as np
 import torch
 import torch.distributed as dist
-
 from sglang.srt.configs.model_config import get_dsa_mtp_topk_width, is_deepseek_dsa
 from sglang.srt.disaggregation.base import KVPoll
 from sglang.srt.distributed.communication_tags import P2PTag
 from sglang.srt.distributed.parallel_state import GroupCoordinator
 from sglang.srt.environ import envs
+from sglang.srt.observability.pd_lifecycle import recorder as pd_lifecycle
 from sglang.srt.runtime_context import (
     get_disagg,
     get_spec,
@@ -255,6 +255,9 @@ def _apply_metadata_gate(polls, decode_reqs, metadata_buffers) -> None:
             actual_room = metadata_buffers.bootstrap_room[
                 decode_req.metadata_buffer_index, 0
             ].item()
+            if pd_lifecycle.enabled and getattr(decode_req, "_pd_metadata_ready", None) != (actual_room != 0):
+                decode_req._pd_metadata_ready = actual_room != 0
+                pd_lifecycle.observe(decode_req.req, local_transport=int(KVPoll.Success), metadata_ready=actual_room != 0)
             if actual_room == 0:
                 polls[i] = int(KVPoll.Transferring)
 
@@ -353,14 +356,17 @@ class ReqToMetadataIdxAllocator:
     def available_size(self):
         return len(self.free_slots)
 
-    def alloc(self) -> Optional[int]:
+    def alloc(self, req=None) -> Optional[int]:
         if len(self.free_slots) == 0:
             return None
-
-        return self.free_slots.popleft()
+        index = self.free_slots.popleft()
+        if req is not None:
+            pd_lifecycle.acquire(self, index, req, "metadata")
+        return index
 
     def free(self, free_index: int):
         self.free_slots.append(free_index)
+        pd_lifecycle.release(self, free_index)
 
 
 class MetadataBuffers:
@@ -1873,6 +1879,7 @@ def prepare_abort(req: Req, error_message: str, status_code=None):
 
     # populate finish metadata and stream output
     req.finished_reason = FINISH_ABORT(error_message, status_code)
+    pd_lifecycle.transition(req, "aborted", origin="prepare_abort")
 
     if req.return_logprob:
         req.logprob.input_token_logprobs_val = []

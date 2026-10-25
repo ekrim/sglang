@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Set, Union
 
 import msgspec
-
 from sglang.srt.disaggregation.utils import DisaggregationMode
 from sglang.srt.model_executor.forward_batch_info import ForwardMode
 from sglang.srt.observability.scheduler_stage_metrics import (
@@ -48,7 +47,6 @@ from sglang.srt.utils.gauge_histogram import GaugeHistogram
 
 if TYPE_CHECKING:
     from prometheus_client import Gauge
-
     from sglang.srt.managers.schedule_batch import Req
 
 SGLANG_TEST_REQUEST_TIME_STATS = get_bool_env_var("SGLANG_TEST_REQUEST_TIME_STATS")
@@ -580,6 +578,12 @@ class SchedulerMetricsCollector(_StatLoggerDIMixin):
         self.num_prefill_inflight_queue_reqs = Gauge(
             name="sglang:num_prefill_inflight_queue_reqs",
             documentation="The number of requests in the prefill inflight queue.",
+            labelnames=labels.keys(),
+            multiprocess_mode="mostrecent",
+        )
+        self.pd_queue_snapshot_timestamp_seconds = Gauge(
+            name="sglang:pd_queue_snapshot_timestamp_seconds",
+            documentation="Last scheduler heartbeat update of PD total queue counts; excludes priority and host subqueues. Zero means never updated.",
             labelnames=labels.keys(),
             multiprocess_mode="mostrecent",
         )
@@ -1383,6 +1387,20 @@ class SchedulerMetricsCollector(_StatLoggerDIMixin):
     def _log_gauge(self, gauge: Gauge, data: Union[int, float]) -> None:
         # Convenience function for logging a scalar to gauge.
         gauge.labels(**self.labels).set(data)
+
+    def log_pd_queue_snapshot(self, queues) -> None:
+        # Only these total gauges share the heartbeat freshness marker.
+        names = {
+            "bootstrap": "num_prefill_bootstrap_queue_reqs",
+            "inflight": "num_prefill_inflight_queue_reqs",
+            "preallocation": "num_decode_prealloc_queue_reqs",
+            "transfer": "num_decode_transfer_queue_reqs",
+            "deferred_release": "num_decode_deferred_kv_release_reqs",
+        }
+        for key, name in names.items():
+            if key in queues:
+                self._log_gauge(getattr(self, name), queues[key])
+        self._log_gauge(self.pd_queue_snapshot_timestamp_seconds, time.time())
 
     def _log_gauge_queue_count(self, gauge: Gauge, data: QueueCount) -> None:
         # Log a QueueCount to gauge: total under default labels, per-priority breakdown under priority="<int>".

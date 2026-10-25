@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, List, Optional
 
 import numpy as np
 import torch
-
 from sglang.srt.disaggregation.base import KVPoll
 from sglang.srt.disaggregation.base.conn import StateType
 from sglang.srt.disaggregation.checksum import (
@@ -84,6 +83,7 @@ from sglang.srt.mem_cache.common import (
 from sglang.srt.mem_cache.deepseek_v4_memory_pool import DeepSeekV4TokenToKVPool
 from sglang.srt.mem_cache.memory_pool import HybridLinearKVPool
 from sglang.srt.mem_cache.unified_radix_cache import UnifiedRadixCache
+from sglang.srt.observability.pd_lifecycle import recorder as pd_lifecycle
 from sglang.srt.observability.req_time_stats import set_schedule_time_batch
 from sglang.srt.observability.scheduler_stage_metrics import (
     SCHEDULER_STAGE_GET_NEXT_BATCH,
@@ -418,7 +418,7 @@ class PrefillBootstrapQueue:
 
         if self.req_to_metadata_buffer_idx_allocator.available_size() == 0:
             return False
-        req.metadata_buffer_index = self.req_to_metadata_buffer_idx_allocator.alloc()
+        req.metadata_buffer_index = self.req_to_metadata_buffer_idx_allocator.alloc(req)
         assert req.metadata_buffer_index is not None
         return True
 
@@ -1720,6 +1720,7 @@ class SchedulerDisaggregationPrefillMixin:
             segment_is_last = last_chunk and is_final_segment
             if not sender.should_send_kv_chunk(len(page_indices), segment_is_last):
                 continue
+            pd_lifecycle.transition(req, "transfer_submitted", chunk_end=seg_end, last_chunk=segment_is_last)
             send_state_indices = state_indices if segment_is_last else None
             if indices_event is not None:
                 sender.send(

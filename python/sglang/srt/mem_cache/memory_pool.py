@@ -38,7 +38,6 @@ import numpy as np
 import torch
 import triton
 import triton.language as tl
-
 from sglang.kernels.ops.kvcache.cache_move import (
     copy_all_layer_kv_cache_func,
     set_kv_buffer_prefix_valid_tiled,
@@ -80,6 +79,7 @@ from sglang.srt.mem_cache.utils import (
     set_mla_kv_buffer_triton_fp8_quant,
     set_mla_kv_scale_buffer_triton,
 )
+from sglang.srt.observability.pd_lifecycle import recorder as pd_lifecycle
 from sglang.srt.platforms import current_platform
 from sglang.srt.runtime_context import get_parallel
 from sglang.srt.utils import (
@@ -431,6 +431,9 @@ class ReqToTokenPool:
             if not r.kv.holds_kv:
                 r.kv.req_pool_idx = select_index[offset]
                 offset += 1
+        if pd_lifecycle.enabled:
+            for req in reqs:
+                pd_lifecycle.acquire(self, req.kv.req_pool_idx, req, "request_slot")
         return [r.kv.req_pool_idx for r in reqs]
 
     def alloc_rows(self, need_size: int) -> Optional[List[int]]:
@@ -457,6 +460,9 @@ class ReqToTokenPool:
             for index in indices:
                 self._aux_cache.free(index)
         self.free_slots.extend(indices)
+        if pd_lifecycle.enabled:
+            for index in indices:
+                pd_lifecycle.release(self, index)
 
     def free(self, req: Req):
         assert req.kv.holds_kv, "request must have req_pool_idx"
@@ -464,6 +470,7 @@ class ReqToTokenPool:
         req.kv.req_pool_idx = None
 
     def clear(self):
+        pd_lifecycle.reset_pool(self)
         self.free_slots = list(range(1, self._alloc_size))
         # req_generation must stay monotonic: readers detect row reuse by
         # equality with a generation they stored, so zeroing it here can give a
@@ -499,6 +506,7 @@ class ReqToTokenPool:
                 req_pool_indices_cpu=req_pool_indices_cpu,
                 target_seq_lens_cpu=target_seq_lens_cpu,
             )
+
 
 
 class MambaPool:

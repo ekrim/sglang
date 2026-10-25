@@ -21,8 +21,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-from typing_extensions import Self
-
 from sglang.srt.disaggregation.utils import DisaggregationMode
 from sglang.srt.model_executor.forward_batch_info import ForwardMode
 from sglang.srt.observability.metrics_collector import (
@@ -30,6 +28,7 @@ from sglang.srt.observability.metrics_collector import (
     SchedulerMetricsCollector,
     TokenizerMetricsCollector,
 )
+from sglang.srt.observability.pd_lifecycle import from_stats as pd_lifecycle_stage
 from sglang.srt.observability.trace import (
     SpanAttributes,
     TraceNullContext,
@@ -43,6 +42,7 @@ from sglang.srt.observability.trace_async import (
 )
 from sglang.srt.utils import get_bool_env_var
 from sglang.srt.utils.poll_timer import PollTimer
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from sglang.srt.disaggregation.base.conn import KVTransferMetric
@@ -737,6 +737,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
             self.run_batch_cpu_start_time = 0.0
 
     def set_retract_time(self, ts=None):
+        pd_lifecycle_stage(self, "retracted")
         ts = ts or time.perf_counter()
         # retract
         self.last_forward_entry_time = 0.0
@@ -749,6 +750,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
             self.trace_ctx.trace_event("retract", 1, convert_time_to_realtime_ns(ts))
 
     def reset_prefill_retry_time(self):
+        pd_lifecycle_stage(self, "prefill_retry")
         self.wait_queue_entry_time = 0.0
         self.forward_entry_time = 0.0
         self.prefill_finished_time = 0.0
@@ -774,6 +776,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
             self.storage_staging_wait_s += self._storage_staging_wait.observe(ready)
 
     def set_wait_queue_entry_time(self, ts=None):
+        pd_lifecycle_stage(self, "execution_wait")
         ts = ts or time.perf_counter()
         if self.wait_queue_entry_time == 0.0:
             if self.enable_metrics and self.disagg_mode != DisaggregationMode.DECODE:
@@ -800,6 +803,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
         self.wait_queue_entry_time = ts
 
     def set_forward_entry_time(self, ts=None):
+        pd_lifecycle_stage(self, "execution_admitted")
         ts = ts or time.perf_counter()
         if self.forward_entry_time == 0.0:
             self.forward_entry_time = ts
@@ -945,6 +949,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
             self.last_decode_scheduled_time = ts
 
     def set_completion_time(self, ts=None):
+        pd_lifecycle_stage(self, "completion")
         ts = ts or time.perf_counter()
         self.completion_time = ts
 
@@ -1031,6 +1036,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
         self.forward_entry_time = ts
 
     def set_prefill_bootstrap_queue_entry_time(self, ts=None):
+        pd_lifecycle_stage(self, "handshake_wait")
         ts = ts or time.perf_counter()
         self.prefill_bootstrap_queue_entry_time = ts
 
@@ -1039,10 +1045,12 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
         self.trace_slice(stage, self.scheduler_recv_time, ts)
 
     def set_prefill_transfer_queue_entry_time(self, ts=None):
+        pd_lifecycle_stage(self, "transfer_wait")
         ts = ts or time.perf_counter()
         self.prefill_transfer_queue_entry_time = ts
 
     def set_prefill_kv_transfer_finish_time(self, ts=None):
+        pd_lifecycle_stage(self, "transfer_complete")
         ts = ts or time.perf_counter()
         self.prefill_kv_transfer_finish_time = ts
 
@@ -1053,6 +1061,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
         self.trace_slice(stage, self.prefill_transfer_queue_entry_time, ts)
 
     def set_decode_prealloc_queue_entry_time(self, ts=None):
+        pd_lifecycle_stage(self, "preallocation_wait")
         ts = ts or time.perf_counter()
         self.decode_prealloc_queue_entry_time = ts
 
@@ -1061,6 +1070,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
         self.trace_slice(stage, self.scheduler_recv_time, ts)
 
     def set_decode_transfer_queue_entry_time(self, ts=None):
+        pd_lifecycle_stage(self, "destination_published")
         ts = ts or time.perf_counter()
         self.decode_transfer_queue_entry_time = ts
 
@@ -1083,6 +1093,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
     def set_bootstrap_done_time(self, ts=None):
         ts = ts or time.perf_counter()
         if self.bootstrap_done_time == 0.0:
+            pd_lifecycle_stage(self, "handshake_ready")
             self.bootstrap_done_time = ts
 
     def set_decode_prebuilt_finish_time(self, ts=None):

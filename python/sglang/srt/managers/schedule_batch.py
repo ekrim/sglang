@@ -81,7 +81,6 @@ from typing import (
 import msgspec
 import numpy as np
 import torch
-
 from sglang.srt.beam_search.batch_tail import (
     BeamTail,
     append_beam_tail,
@@ -137,6 +136,7 @@ from sglang.srt.observability.metrics_collector import (
     DPCooperationInfo,
     SchedulerMetricsCollector,
 )
+from sglang.srt.observability.pd_lifecycle import recorder as pd_lifecycle
 from sglang.srt.observability.req_time_stats import (
     APIServerReqTimeStats,
     DPControllerReqTimeStats,
@@ -1417,6 +1417,7 @@ class Req(ReqDllmMixin):
         self.bootstrap_host: str = bootstrap_host
         self.bootstrap_port: Optional[int] = bootstrap_port
         self.bootstrap_room: Optional[int] = bootstrap_room
+        pd_lifecycle.bind(self)
         # Decode-local: the already-emitted boundary token to replay when a
         # retracted request is rebootstrapped. Set in pause_generation(retract)
         # and consumed in the decode transfer commit; never plumbed to prefill.
@@ -2257,6 +2258,7 @@ class Req(ReqDllmMixin):
         self.return_logprob = False
         self.logprob_start_len = -1
         self.to_finish = FINISH_ABORT(error_msg, status_code, err_type)
+        pd_lifecycle.transition(self, "cancel_requested", origin="set_finish_with_abort")
 
     def update_reasoning_tokens(self, token_id, think_end_ids):
         if self._is_reasoning_over:

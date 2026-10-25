@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
-
 from sglang.srt.configs.mamba_utils import Mamba2CacheParams
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
 from sglang.srt.disaggregation.base import KVPoll
@@ -109,6 +108,7 @@ from sglang.srt.mem_cache.memory_pool import (
 )
 from sglang.srt.mem_cache.swa_memory_pool import SWAKVPool
 from sglang.srt.mem_cache.unified_cache.component_type import ComponentType
+from sglang.srt.observability.pd_lifecycle import recorder as pd_lifecycle
 from sglang.srt.observability.req_time_stats import (
     set_schedule_time_batch,
     set_time_batch,
@@ -248,20 +248,26 @@ class DecodeReqToTokenPool:
                 r.kv.req_pool_idx = select_index[offset]
                 self.req_generation[r.kv.req_pool_idx] += 1
                 offset += 1
+        if pd_lifecycle.enabled:
+            for req in reqs:
+                pd_lifecycle.acquire(self, req.kv.req_pool_idx, req, "request_slot")
         return [r.kv.req_pool_idx for r in reqs]
 
     def free(self, req: Req):
         assert req.kv.holds_kv, "request must have req_pool_idx"
         self.free_slots.append(req.kv.req_pool_idx)
+        pd_lifecycle.release(self, req.kv.req_pool_idx)
         req.kv.req_pool_idx = None
 
     def clear(self):
+        pd_lifecycle.reset_pool(self)
         self.free_slots = list(range(1, self._alloc_size))
         # req_generation must stay monotonic; see ReqToTokenPool.clear().
 
     def register_on_alloc_rows(self, hook: Callable[[List[int]], None]) -> None:
         assert self._on_alloc_rows is None
         self._on_alloc_rows = hook
+
 
 
 class HybridMambaDecodeReqToTokenPool(HybridReqToTokenPool):
@@ -1083,6 +1089,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
         return resumed_reqs
 
     def _init_receiver(self, decode_req: DecodeRequest, prefill_dp_rank: int) -> None:
+        pd_lifecycle.transition(decode_req.req, "handshake_wait", rebootstrap=getattr(decode_req, "is_rebootstrap", False))
         decode_req.kv_receiver.init(prefill_dp_rank)
         if (
             get_disagg().disaggregation_decode_allocation_policy == "prefill_complete"
@@ -1437,6 +1444,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
 
             if self.req_to_metadata_buffer_idx_allocator.available_size() <= 0:
                 tuning_recorder.observe("decode.metadata_slots")
+                pd_lifecycle.observe(decode_req.req, blocked_gate="metadata_slots")
                 break
 
             if self.scheduler.enable_lora and not self.scheduler.can_schedule_lora_req(
@@ -1454,6 +1462,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             ):
                 if not self._pre_alloc_host(decode_req):
                     tuning_recorder.observe("decode.host_capacity")
+                    pd_lifecycle.observe(decode_req.req, blocked_gate="host_capacity")
                     break
                 preallocated_reqs.append(decode_req)
                 indices_to_remove.add(i)
@@ -1463,6 +1472,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
 
             if self.req_to_token_pool.available_size() <= 0:
                 tuning_recorder.observe("decode.request_slots")
+                pd_lifecycle.observe(decode_req.req, blocked_gate="request_slots")
                 break
 
             # Reserve enough Mamba capacity for radix COW and tracking buffers
@@ -1471,10 +1481,12 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 self.req_to_token_pool, [decode_req.req], self.tree_cache
             ):
                 tuning_recorder.observe("decode.mamba_capacity")
+                pd_lifecycle.observe(decode_req.req, blocked_gate="mamba_capacity")
                 break
 
             if hisparse_req_budget <= 0:
                 tuning_recorder.observe("decode.hisparse_capacity")
+                pd_lifecycle.observe(decode_req.req, blocked_gate="hisparse_capacity")
                 break
 
             # Memory estimation: don't add if the projected memory cannot be met
@@ -1569,6 +1581,11 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                     if swa_allocatable_tokens is not None:
                         values["swa_budget"] = swa_allocatable_tokens
                     tuning_recorder.observe("decode.kv_budget", **values)
+                pd_lifecycle.observe(
+                    decode_req.req, blocked_gate="kv_capacity",
+                    full_required=full_required_for_admission, full_budget=full_allocatable_tokens,
+                    swa_required=swa_required_for_admission, swa_budget=swa_allocatable_tokens,
+                )
                 if prefix_match is not None and prefix_match.l1_prefix_len > 0:
                     self.tree_cache.unlock(decode_req.req.lock)
                     decode_req.req.lock = None
@@ -1610,6 +1627,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                     new_tokens=required_alloc_tokens,
                     prefix_tokens=prefix_len,
                 )
+            pd_lifecycle.observe(decode_req.req, blocked_gate=None, reserved_new_tokens=required_alloc_tokens, prefix_tokens=prefix_len)
             decode_req.prefix_match = prefix_match
             if self.scheduler.enable_decode_hicache:
                 self._start_hicache_prefetch(decode_req.req, prefix_match)
@@ -1834,7 +1852,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
         self, decode_req, kv_indices, page_size, state_indices=None, **metadata_kwargs
     ) -> None:
         decode_req.metadata_buffer_index = (
-            self.req_to_metadata_buffer_idx_allocator.alloc()
+            self.req_to_metadata_buffer_idx_allocator.alloc(decode_req.req)
         )
         assert decode_req.metadata_buffer_index is not None
         page_indices = self._transfer_page_indices(decode_req, kv_indices, page_size)
@@ -1931,12 +1949,14 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             destination=KVTransferDestination.HOST,
         )
         decode_req.host_staged = True
+        pd_lifecycle.observe(decode_req.req, host_backup_tokens=num_tokens, host_swa_tokens=swa_num_tokens, host_staged=True)
         if self.scheduler.metrics_reporter.current_scheduler_metrics_enabled:
             self.scheduler.metrics_collector.increment_decode_host_receive_reqs()
         return True
 
     def allocate_host_staged(self, decode_req: DecodeRequest) -> bool:
         if self.req_to_token_pool.available_size() <= 0:
+            pd_lifecycle.observe(decode_req.req, blocked_gate="host_to_device_request_slots")
             return False
         req = decode_req.req
         retractable_tokens = sum(
@@ -2801,6 +2821,9 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
         deferred_indices = set()
         failed: List[Tuple[int, DecodeRequest, bool]] = []
         for i, (decode_req, poll) in enumerate(zip(self.queue, polls)):
+            if pd_lifecycle.enabled and getattr(decode_req, "_pd_consensus_poll", None) != poll:
+                decode_req._pd_consensus_poll = poll
+                pd_lifecycle.observe(decode_req.req, consensus_poll=int(poll), host_staged=getattr(decode_req, "host_staged", False))
             if rids_to_check is not None and decode_req.req.rid not in rids_to_check:
                 continue
 
@@ -2864,6 +2887,7 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
                 self._record_transfer_failure(failure_reason)
                 continue
             elif poll == KVPoll.Success:
+                pd_lifecycle.transition(decode_req.req, "transfer_complete")
                 if self.enable_host_receive and decode_req.host_staged:
                     if isinstance(decode_req.req.finished_reason, FINISH_ABORT):
                         self.scheduler.output_streamer.stream_output(
@@ -2950,6 +2974,10 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
             if (self.enable_host_receive and decode_req.host_staged)
             or not decode_req.kv_receiver.abort_notified
             else len(decode_req.kv_receiver.bootstrap_infos)
+        )
+        pd_lifecycle.transition(
+            decode_req.req, "cleanup_deferred", required_acks=required_acks,
+            host_staged=decode_req.host_staged, deadline_monotonic=deadline,
         )
         self._deferred_releases.append(
             (
@@ -3056,12 +3084,14 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
                     f"ack from prefill; releasing anyway."
                 )
             outcome = "drained" if drained else "timeout"
+            pd_lifecycle.observe(decode_req.req, cleanup_outcome=outcome)
             try:
                 self._do_release(decode_req, idx)
             except Exception:
                 # Isolate a failed release so the rest still run; entry already dropped.
                 logger.exception(f"Deferred KV release failed for room {room}")
                 outcome = "error"
+                pd_lifecycle.observe(decode_req.req, cleanup_outcome="error")
             self._observe_deferred_kv_release(
                 duration_seconds=max(0.0, now - start_time),
                 outcome=outcome,

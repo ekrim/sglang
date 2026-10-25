@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, cast
 
 import numpy as np
 import torch
-
 from sglang.kernels.ops.memory.common import (
     _get_last_loc_safe_kernel as _get_last_loc_safe_kernel,
 )
@@ -24,6 +23,7 @@ from sglang.srt.mem_cache.hicache_storage import PoolTransfer
 from sglang.srt.mem_cache.memory_pool import ReqToTokenPool
 from sglang.srt.mem_cache.radix_cache import RadixKey
 from sglang.srt.mem_cache.unified_cache.component_type import ComponentType
+from sglang.srt.observability.pd_lifecycle import recorder as pd_lifecycle
 from sglang.srt.runtime_context import get_serving, get_spec
 from sglang.srt.utils.common import ceil_align
 
@@ -390,6 +390,7 @@ def discard_kv_cache_backup(
     unified_cache = cast("UnifiedRadixCache", tree_cache)
     unified_cache.discard_kv_cache_backup(req.kv.retraction_backup)
     req.kv.retraction_backup = None
+    pd_lifecycle.observe(req, host_backup_tokens=0, host_swa_tokens=0, host_backup_released=True)
 
 
 def release_kv_cache(req: Req, tree_cache: BasePrefixCache, *, checkpoint: bool):
@@ -408,9 +409,12 @@ def release_kv_cache(req: Req, tree_cache: BasePrefixCache, *, checkpoint: bool)
             )
             req.kv.mamba_pool_idx = None
         return
+    observed_row = req.kv.req_pool_idx if pd_lifecycle.enabled else None
     if tree_cache.claim_kv_row(req):
         # A streaming session detached the kv record to keep the row.
         assert not req.kv.holds_kv
+        if pd_lifecycle.enabled:
+            pd_lifecycle.transfer_to_session(tree_cache.req_to_token_pool, observed_row)
         return
 
     owned_kv_len = req.owned_kv_len()
