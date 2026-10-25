@@ -3645,7 +3645,7 @@
         "anchor": "logger.info(\"pd_lifecycle %s\""
       },
       "observation_contract": {
-        "identity": "RID and exact decimal-string room, role/worker/rank, host/pid/incarnation and process-local sequence",
+        "identity": "Schema2: RID, exact bounded64-bit decimal-string room, process-local request_generation, role/worker/rank,host/pid/incarnation and sequence. Reused client IDs do not merge request lifetimes.",
         "activation": "SGLANG_PD_LIFECYCLE_INTERVAL>0; scheduler heartbeat even without forwards",
         "freshness": "snapshot_monotonic and scheduler_run_batch_count; silence unknown; emitted_unix does not align remote clocks",
         "bounds": "max_requests/max_events,4 sink batches,oldest8,history12,pools16; sampling and cumulative loss explicit",

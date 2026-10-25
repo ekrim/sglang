@@ -67,6 +67,7 @@ class PDLifecycleRecorder:
         self.counts = Counter()
         self.loss = Counter()
         self.seq = 0
+        self.request_seq = 0
         self.emit = emit
         self._sink = None
         self._thread = None
@@ -101,7 +102,7 @@ class PDLifecycleRecorder:
             else "sha256:" + hashlib.sha256(rid.encode()).hexdigest()
         )
         room = getattr(req, "bootstrap_room", None)
-        if room is not None and type(room) is not int:
+        if room is not None and (type(room) is not int or not -(2**63) <= room < 2**64):
             return None
         return (rid, None if room is None else str(room))
 
@@ -115,6 +116,15 @@ class PDLifecycleRecorder:
         if key is None:
             self.loss["unsupported_identity"] += 1
             return None, None
+        # A completed client RID/room may be reused before its final snapshot
+        # or deferred cleanup. Keep distinct Req objects as distinct lifetimes;
+        # retries/chunks on the same Req retain their generation.
+        stamp = getattr(req, "_pd_lifecycle_stamp", None)
+        if type(stamp) is not tuple or stamp[0] != self.context["incarnation"]:
+            self.request_seq += 1
+            stamp = (self.context["incarnation"], self.request_seq)
+            req._pd_lifecycle_stamp = stamp
+        key = (*key, stamp[1])
         entry = self.entries.get(key)
         if entry is None:
             if len(self.entries) >= self.max_requests:
@@ -124,6 +134,7 @@ class PDLifecycleRecorder:
             entry = dict(
                 rid=key[0],
                 room=key[1],
+                request_generation=key[2],
                 stage="unknown",
                 stage_since=now,
                 first_seen=now,
@@ -166,7 +177,7 @@ class PDLifecycleRecorder:
             "cleanup_deferred",
         }:
             if len(self.events) < self.max_events:
-                record = dict(rid=key[0], room=key[1], **row)
+                record = dict(rid=key[0], room=key[1], request_generation=key[2], **row)
                 if event in {"aborted", "cancel_requested", "cleanup_deferred"}:
                     record["diagnostic"] = self._view(entry, now)
                 self.events.append(record)
@@ -344,6 +355,7 @@ class PDLifecycleRecorder:
         return dict(
             rid=entry["rid"],
             room=entry["room"],
+            request_generation=entry["request_generation"],
             stage=entry["stage"],
             stage_age_seconds=max(0, now - entry["stage_since"]),
             progress_age_seconds=max(0, now - entry["last_progress"]),
@@ -416,7 +428,7 @@ class PDLifecycleRecorder:
                 )
             )
         record = dict(
-            schema_version=1,
+            schema_version=2,
             context=self.context,
             seq=self.seq,
             snapshot_monotonic=now,

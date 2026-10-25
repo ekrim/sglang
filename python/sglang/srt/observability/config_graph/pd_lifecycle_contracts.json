@@ -42,7 +42,8 @@
         "cancellation_cleanup"
       ],
       "tests": [
-        "test/registered/unit/disaggregation/test_pd_lifecycle_transitions.py::test_actual_pool_exhaustion_and_reuse"
+        "test/registered/unit/disaggregation/test_pd_lifecycle_transitions.py::test_actual_pool_exhaustion_and_reuse",
+        "test/registered/unit/disaggregation/test_pd_lifecycle_transitions.py::test_reused_actual_req_identity_survives_previous_completion"
       ],
       "decision": {
         "if_observation_A": "Young advancing owners: consider capacity/service tradeoff.",
@@ -50,7 +51,8 @@
       },
       "limits": [
         "Row0 padding versus metadata0 valid; session retention and unbound rows explicit.",
-        "Physical/shared KV bytes unobserved; tracked resource rows are not a byte ledger."
+        "Physical/shared KV bytes unobserved; tracked resource rows are not a byte ledger.",
+        "Schema2 request_generation distinguishes repeated RID/room lifetimes within one process; retry/chunk transitions on the same Req keep their generation. Legacy schema1 histories cannot establish this distinction."
       ]
     },
     {

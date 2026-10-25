@@ -133,6 +133,41 @@ class TestPDLedger(unittest.TestCase):
         self.rec.release(pool, 1)
         self.assertFalse(self.rec.owners)
 
+    def test_reused_rid_room_does_not_inherit_terminal_or_held_ownership(self):
+        first, second = Request("same", 7), Request("same", 7)
+        pool = Pool()
+        self.rec.bind(first)
+        self.rec.acquire(pool, 1, first, "request_slot")
+        self.rec.transition(first, "aborted")
+        self.rec.transition(first, "cleanup_deferred")
+        self.rec.bind(second)
+        self.rec.transition(second, "handshake_wait")
+        self.rec.summary({"preallocation": 1, "deferred_release": 1})
+        holder = self.records[-1]["oldest_holders"][0]
+        waiter = self.records[-1]["oldest_waiters"][0]
+        self.assertNotEqual(holder["request_generation"], waiter["request_generation"])
+        self.assertTrue(holder["terminal"])
+        self.assertFalse(waiter["terminal"])
+        self.rec.release(pool, 1)
+        self.rec.summary({"preallocation": 1}, force=True)
+        self.assertEqual(len(self.rec.entries), 1)
+        self.assertEqual(
+            self.records[-1]["oldest_waiters"][0]["stage"], "handshake_wait"
+        )
+        generation = waiter["request_generation"]
+        self.rec.transition(second, "prefill_retry")
+        self.rec.summary({}, force=True)
+        self.assertEqual(
+            self.records[-1]["oldest_waiters"][0]["request_generation"], generation
+        )
+
+    def test_room_identity_bound_preserves_uint64_and_rejects_larger_values(self):
+        self.rec.bind(Request("largest", 2**64 - 1))
+        self.rec.bind(Request("too-large", 2**64))
+        self.rec.summary({})
+        self.assertEqual(self.records[-1]["oldest_waiters"][0]["room"], str(2**64 - 1))
+        self.assertEqual(self.records[-1]["loss_total"]["unsupported_identity"], 1)
+
     def test_actual_heartbeat_activates_without_forward_or_idle_metrics(self):
         pool = Pool()
         metadata = Pool()

@@ -76,6 +76,24 @@ class TestActualPDTransitions(unittest.TestCase):
         )
         self.assertEqual(self.records[-1]["pools"][0]["unattributed_occupied"], 0)
 
+    def test_reused_actual_req_identity_survives_previous_completion(self):
+        first = self.request("reused")
+        self.pool.alloc([first])
+        self.pool.free(first)
+        first.time_stats.set_completion_time()
+        second = self.request("reused")
+        second.time_stats.set_decode_prealloc_queue_entry_time()
+        recorder.summary({"preallocation": 1}, force=True)
+        waiter = self.records[-1]["oldest_waiters"][0]
+        self.assertFalse(waiter["terminal"])
+        self.assertEqual(len(recorder.entries), 1)
+        self.pool.alloc([second])
+        recorder.summary({}, force=True)
+        self.assertEqual(
+            self.records[-1]["oldest_holders"][0]["request_generation"],
+            waiter["request_generation"],
+        )
+
     def test_actual_abort_then_deferred_cleanup_waits_for_ack(self):
         req = self.request("held")
         self.pool.alloc([req])
