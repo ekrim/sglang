@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "classification": "Stable source observation contracts, not runtime qualification or empirical performance claims.",
+  "contracts": [
+    {
+      "id": "pd.phase_freshness",
+      "question": "Are zeros fresh and are stages progressing without forwards?",
+      "source": {
+        "path": "python/sglang/srt/observability/pd_lifecycle.py",
+        "anchor": "def scheduler_heartbeat"
+      },
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "phase_coverage": [
+        "waiting_only",
+        "active",
+        "cancellation_cleanup"
+      ],
+      "tests": [
+        "test/registered/unit/observability/test_pd_lifecycle.py::test_actual_heartbeat_activates_without_forward_or_idle_metrics"
+      ],
+      "decision": {
+        "if_observation_A": "Fresh empty queues with progress: investigate supply.",
+        "if_observation_B": "Fresh occupied queues without progress: inspect stages/holders. Stale or silent: unknown; repair activation."
+      },
+      "limits": [
+        "Freshness applies to named queue totals only.",
+        "scheduler_run_batch_count includes prebuilt placeholders; zero delta excludes all run_batch calls.",
+        "No cross-process monotonic subtraction."
+      ]
+    },
+    {
+      "id": "pd.ownership",
+      "question": "Who holds request and metadata rows?",
+      "source": {
+        "path": "python/sglang/srt/observability/pd_lifecycle.py",
+        "anchor": "def acquire"
+      },
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "phase_coverage": [
+        "waiting_only",
+        "active",
+        "cancellation_cleanup"
+      ],
+      "tests": [
+        "test/registered/unit/disaggregation/test_pd_lifecycle_transitions.py::test_actual_pool_exhaustion_and_reuse"
+      ],
+      "decision": {
+        "if_observation_A": "Young advancing owners: consider capacity/service tradeoff.",
+        "if_observation_B": "Old or cancelled holders: diagnose progress/cleanup before capacity."
+      },
+      "limits": [
+        "Row0 padding versus metadata0 valid; session retention and unbound rows explicit.",
+        "Physical/shared KV bytes unobserved; tracked resource rows are not a byte ledger."
+      ]
+    },
+    {
+      "id": "pd.cleanup",
+      "question": "Did cancellation release resources at the actual safe transition?",
+      "source": {
+        "path": "python/sglang/srt/observability/pd_lifecycle.py",
+        "anchor": "def release"
+      },
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "phase_coverage": [
+        "waiting_only",
+        "active",
+        "cancellation_cleanup"
+      ],
+      "tests": [
+        "test/registered/unit/disaggregation/test_pd_lifecycle_transitions.py::test_actual_abort_then_deferred_cleanup_waits_for_ack",
+        "test/registered/unit/disaggregation/test_deferred_decode_kv_release.py::test_host_release_requires_drain_on_every_rank_even_after_timeout"
+      ],
+      "decision": {
+        "if_observation_A": "Release observed and slot reused: do not blame a retained row.",
+        "if_observation_B": "Cancelled holder awaiting drain/consensus: examine cleanup dependency; omission under loss is unknown."
+      },
+      "limits": [
+        "Host destination timeout cannot authorize release before drain.",
+        "Terminal state is distinct from physical release; session retention is a valid branch."
+      ]
+    },
+    {
+      "id": "pd.readiness",
+      "question": "Which observed stage prevents admission/progress?",
+      "source": {
+        "path": "python/sglang/srt/disaggregation/utils.py",
+        "anchor": "metadata_ready=actual_room != 0"
+      },
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "phase_coverage": [
+        "waiting_only",
+        "active",
+        "cancellation_cleanup"
+      ],
+      "tests": [
+        "test/registered/unit/disaggregation/test_pd_lifecycle_transitions.py::test_abort_before_reservation_and_retry_timestamps"
+      ],
+      "decision": {
+        "if_observation_A": "Transport locally successful but metadata absent: inspect metadata visibility/gate.",
+        "if_observation_B": "Handshake or capacity guard observed: inspect that stage and its owners; no matching peer record remains a gap."
+      },
+      "limits": [
+        "No extra readiness calls or GPU reads; hook reuses existing result.",
+        "Transfer submission is not wire-start; no wire-byte progress.",
+        "Native diagnostic must reconstruct deliberate stall and real healthy P/D completion."
+      ]
+    },
+    {
+      "id": "pd.bounded_history",
+      "question": "Is the retained cohort complete enough to choose an action?",
+      "source": {
+        "path": "python/sglang/srt/observability/pd_lifecycle.py",
+        "anchor": "def summary"
+      },
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "phase_coverage": [
+        "waiting_only",
+        "active",
+        "cancellation_cleanup"
+      ],
+      "tests": [
+        "test/registered/unit/observability/test_pd_lifecycle.py::test_disabled_and_overflow_are_explicit",
+        "test/registered/unit/observability/test_pd_lifecycle.py::test_unbounded_or_non_scalar_facts_are_rejected_and_close_is_idempotent"
+      ],
+      "decision": {
+        "if_observation_A": "Fresh correlated cohort without relevant loss: apply conditional rule.",
+        "if_observation_B": "Sampled/truncated/lost/unsupported history: bound uncertainty and repair diagnostic before repeating dependent full trials."
+      },
+      "limits": [
+        "Max requests/events/history/oldest/pools and four async sink batches bound memory/output.",
+        "Permanent sink failure or process death can prevent final drop report.",
+        "PP/CP/PDMux/concurrent writers are not qualified."
+      ]
+    }
+  ]
+}

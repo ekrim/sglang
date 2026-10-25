@@ -356,7 +356,9 @@ class PDLifecycleRecorder:
             or entry["history_lost"] > 0,
         )
 
-    def summary(self, queues, *, force=False, unsupported=()):
+    def summary(
+        self, queues, *, force=False, unsupported=(), scheduler_run_batch_count=None
+    ):
         if not self.enabled:
             return
         now = self.clock()
@@ -422,6 +424,8 @@ class PDLifecycleRecorder:
             clock_scope="process_local_monotonic",
             interval_seconds=self.interval,
             queues=dict(queues),
+            scheduler_run_batch_count=scheduler_run_batch_count,
+            scheduler_run_batch_scope="includes_prebuilt_placeholders; zero_delta_rules_out_run_batch",
             pools=pools,
             tracked_stages=dict(stages),
             oldest_stage_seconds=oldest,
@@ -554,6 +558,7 @@ def scheduler_heartbeat(scheduler, now):
         recorder.register_pool(metadata_pool, "metadata")
         recorder.summary(
             queues,
+            scheduler_run_batch_count=scheduler.forward_ct,
             unsupported=(
                 "physical_KV_bytes_and_shared_prefix_ownership",
                 "wire_byte_progress_unobserved",

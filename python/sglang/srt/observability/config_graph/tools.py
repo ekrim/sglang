@@ -95,9 +95,9 @@ def check(graph):
             "interacts_with",
         }
     current = inventory(graph)
-    assert current == json.loads(
-        (HERE / "inventory.json").read_text()
-    ), "field inventory drift; run --refresh-inventory"
+    assert current == json.loads((HERE / "inventory.json").read_text()), (
+        "field inventory drift; run --refresh-inventory"
+    )
     # Validate observation contracts against actual production call sites, including
     # fields hidden in **values via focused runtime tests, not guessed metric names.
     spec = importlib.util.spec_from_file_location(
@@ -136,15 +136,31 @@ def check(graph):
         assert rule["id"] not in rule_ids, rule["id"]
         rule_ids.add(rule["id"])
         for key in (
-            "observation", "diagnosis", "alternatives", "check", "action",
-            "expected", "reject_if", "status",
+            "observation",
+            "diagnosis",
+            "alternatives",
+            "check",
+            "action",
+            "expected",
+            "reject_if",
+            "status",
         ):
             assert rule.get(key), (rule["id"], key)
-        assert rule["graph_nodes"] and all(
-            n in nodes for n in rule["graph_nodes"]
-        ), rule["id"]
+        assert rule["graph_nodes"] and all(n in nodes for n in rule["graph_nodes"]), (
+            rule["id"]
+        )
         assert isinstance(rule["runtime_evidence"], list), rule["id"]
+    lifecycle = json.loads((HERE / "pd_lifecycle_contracts.json").read_text())
+    for contract in lifecycle["contracts"]:
+        source = contract["source"]
+        assert source["anchor"] in (ROOT / source["path"]).read_text(), contract["id"]
+        assert set(contract["decision"]) == {"if_observation_A", "if_observation_B"}
+        assert all(contract["decision"].values())
+        for test in contract["tests"]:
+            path, name = test.split("::")
+            assert "def " + name + "(" in (ROOT / path).read_text(), test
     return dict(
+        lifecycle_contracts=len(lifecycle["contracts"]),
         explanation_rules=len(rule_ids),
         nodes=len(nodes),
         edges=len(graph["edges"]),

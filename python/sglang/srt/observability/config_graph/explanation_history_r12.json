@@ -1,0 +1,564 @@
+{
+  "classification": "Historical snapshot through R12 launch; contains superseded operational prose. Never use as current status.",
+  "snapshot": {
+    "schema_version": 1,
+    "source_base": "4b00b1ac474baa34bb4500d1621cdf4122d2f9c3",
+    "rules": [
+      {
+        "id": "explicit-prefill-cadence",
+        "graph_nodes": [
+          "config.prefill_decode_interval",
+          "mechanism.prefill_decode_cadence",
+          "log.prefill.decode_interval",
+          "mechanism.graph_dispatch",
+          "metric.cuda_graph_passes_total"
+        ],
+        "observation": "Repeated prefill.decode_interval with waiting_requests>0 or chunk_pending=1, while per-rank prefill service is insufficient.",
+        "diagnosis": "The configured decode interval explicitly prevents the admission scan. Free KV or absent budget-gate events do not rule this out.",
+        "alternatives": [
+          "Queued requests may also be ineligible for cache transfer or capacity.",
+          "Another DP rank can arm the interval; local queue pressure may differ.",
+          "A graph-to-eager transition lengthens scheduler steps, reducing wall-clock prefill opportunities at the same configured countdown; this is distinct from a change in interval value."
+        ],
+        "check": "Correlate rank-local gate windows with queue slope, prefill effective-token rates, decode output rate and resolved cadence. Event counts do not measure wait time. Compare decode graph/non-graph and prefill step rates in the same retained spans. The countdown advances per scheduling call and is rearmed on synchronized extend work, not by a wall-clock timer. Stable step ratios with slower steps can explain less prefill service without a new token-budget limit.",
+        "action": "Choose one cadence adjustment from workload-specific evidence. The C384 interval 24 to 18 full replay is now completed; retain its observed tradeoff and confounders. Select any future cadence trial prospectively and keep other serving controls fixed. If a supported graph-coverage failure slows both decode and prefill opportunities at unchanged step ratio, prioritize a coverage/admission repair candidate before another cadence or prefill-budget change.",
+        "expected": "Fewer consecutive deferrals and higher prefill service; decode ITL may worsen.",
+        "reject_if": "Output throughput or p10 user speed regresses without a useful Pareto tradeoff; gate evidence does not clear.",
+        "status": "R10 Q3 exposes a graph/cadence interaction at fixed interval18; a request-cap candidate is drafted but not queued. Full R10 qualification and idle validation precede next selection.",
+        "runtime_evidence": [
+          "GB200 baseline-r1 interval24 versus cadence12-r2 interval12, bothC256, same pinned executable/model/image and canonical warmup; countdownmax23 versus11 verifies effective setting.",
+          "Short canonical result: totalTPS/GPU291430.60\u2192275773.54,output2271.77\u21922159.40;TTFTp50693.39\u2192519.14ms,p953163.66\u21921621.50ms;ITLp508.351\u219211.206ms. Zero recorded errors; draincancellations19\u219212.",
+          "Aligned busy windows show less queue persistence and fewer decode steps/second. Realized trajectories/cache progression differ; evidence supports a prefix tradeoff, not an exclusive causal attribution or full-replay winner.",
+          "Next run is original-config full3600-second baseline, per user steering. Learn later regimes before selecting another intervention; calibrate shorter sections against full runs later.",
+          "Original interval24 fullbaseline completed351476.99totalTPS/GPU. Next fullcandidate changes clientconcurrency only; cadence12 prefix is not treated as a full-hour ranking.",
+          "C384 interval24 retained all40 diagnostic windows: quarter queue means21.94/31.14/27.35/27.56 per rank, with pending chunks and repeated cadence/input-budget gates. Finalization was interrupted, so no qualified C384 score is claimed. Next controlled server change is interval18; new node and durable-output/resource-policy changes are explicit comparison caveats.",
+          "GB200 full C384 interval18:355392.77273total/2818.85652outputTPS perGPU,41871successes,128drain cancellations,0request errors,100%TTFT/ITL coverage. Against retained C384 interval24 windows, computed prefill rises about12\u201318% across quarters and decode service is nearly flat (\u22121.61% to+1.35%). The prior C384 lacks a canonical score; the qualified C256 reference differs in load and runtime placement.",
+          "R8b qualified full3600s:355329.24083total/2879.70095outputTPS/GPU over4GB200;42609success+117canonical draincancel=42726sent,0errors,393traces,100%TTFT/ITLcoverage,all measured OSLmatch. -2.1296%bestR6,still16.3015%belowoverallvLLM. New diagnostics/backing/cache/closed-loop mix differ; no isolated instrumentation-overhead conclusion. All40windows retained. Quarter prefill changes versusR6:+0.85/-2.98/-1.84/-0.02%,decode:-1.30/-0.31/+1.27/-3.59%; queues persist. Selected R9interval18\u219215 at unchangedcapacity/SPF/C384; full replay required, and extra prefill may worsen decode/ITL.",
+          "R9 full3600s qualified361857.45583total/2854.53903outputTPS/GPU:42348success+113canonical draincancel=42461sent,0errors,393traces,100%TTFT/ITLcoverage,all measured OSLmatch. +1.8372%R8b,-0.3315%R6; ITLp50=13.5791ms, user speedp10/p50=67.1755/73.6425. Retain R6cadence18. All8startup hugepage receipts now100%rounded versus R8b partial; source and closed-loop mix differ. VersusR8b, quarter prefill+5.81/+10.07/+7.57/+6.31%, active+11.06/+8.38/+10.05/+11.90%, decode+0.14/-1.44/-1.42/-1.33%, decodegraphsteps-8.58/-8.17/-10.40/-11.23%. The predicted admission/batch tradeoff occurred without a new best throughput result.",
+          "R10 window27\u201328.5min:~20.203decodegraphsteps/s and1.125prefillsteps/s (ratio~17.96). Window30\u201331.5min:4.525nongraphdecode/0.25prefillsteps/s (ratio~18.10) with interval18 unchanged. Q3versusR6 decode-52.79%,computedprefill-67.41%,active+52.14%,queues+305.88%,graphsteps-84.43%; nongraphsteps3.814/s over fully covered retained Q3spans. Existing observations support graph slowdown reducing prefill opportunity frequency. These are interval-level associations and source semantics, not exact per-request delays, isolated CPU/GPU time or a final score."
+        ]
+      },
+      {
+        "id": "prefill-compute-budget",
+        "graph_nodes": [
+          "config.chunked_prefill_size",
+          "mechanism.prefill_tokens",
+          "config.max_prefill_tokens",
+          "config.SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
+          "mechanism.moe_backend",
+          "log.dsv41_prefill_autotune",
+          "log.moe_buffer_creation"
+        ],
+        "observation": "Queued work with input/chunk budget encounters and available KV; explicit interval and request caps are not the dominant obstruction.",
+        "diagnosis": "A prefill compute budget stops further admission, but the first emitted gate does not uniquely identify a configuration knob: input exhaustion precedes chunk exhaustion.",
+        "alternatives": [
+          "Replay rows consume the same budget.",
+          "DP divides declared chunk size.",
+          "Post-admission checks are not rejected requests.",
+          "Input and chunk limits can exhaust together; raising max_prefill_tokens alone may change only the gate name.",
+          "Normal chunked shape selection uses chunk/KV limits, so max_prefill_tokens is not a universal per-forward hard ceiling.",
+          "Larger effective chunks require sufficient MegaMoE token capacity and symmetric-buffer memory."
+        ],
+        "check": "Read resolved per-rank input/chunk limits and prefill.admitted residuals together. Inspect gate order and the actual normal/chunk-continuation path. Check aligned chunk size against the MegaMoE env cap and physical memory before proposing a larger budget. Where deployed, join pass_end.adder_stop_site to the same ending/residuals. existing_chunk_slot with positive residuals identifies the one-continuation return branch; pass_input_budget with both exhausted identifies the ordered input check, not evidence that raising input alone helps. Missing/unannotated sites stay unknown.",
+        "action": "If complete-run evidence supports increasing prefill work, change a coherent effective chunk budget with only its required input/workspace prerequisites. Record any coupled flags explicitly as one budget intervention; do not treat an input-to-chunk event-name change as added capacity.",
+        "expected": "Larger useful admitted batches and increased prefill service, potentially worse TTFT/ITL.",
+        "reject_if": "Service does not improve, memory guard trips, or long-context coverage/errors worsen.",
+        "status": "R6 complete and qualified:363061.07totalTPS/GPU (+2.16%R5b), worse median interactivity; below refreshed overall vLLM target",
+        "runtime_evidence": [
+          "GB200 cadence18-hour-r5b window13 (18\u201319.5min): per-rank prefill.admitted input_remaining and chunk_remaining aggregates match, minima0; extend max16384 and replay sum0. This is a bounded window, not a full-run score or proof that raising the budget helps.",
+          "Full interval18 replay retains queued work and matching exhausted16384 input/chunk residuals. Installed DeepGEMM size API queried after serving exit estimates20480 versus16384 adds1.916\u20132.040GiB across target/draft buffer cases. These are source-derived possible keys, not actual allocation receipts or total peak headroom. Next trial couples chunk81920global/input20480/MegaMoEcap20480, with other server/load controls fixed. Correction from subsequent four-rank construction: the API estimate used unaligned caps and is not actual allocation/headroom evidence. Requested 20480 resolves to 21120; no corrected baseline delta was measured.",
+          "R6 startup reports seven eligible MXFP8 layouts at M=20480 on all four ranks. Source-audited caller uses the resolved prefill buffer ceiling (or max_prefill_tokens fallback). This confirms startup tuning size, not admitted batches, actual workspace bytes or throughput. Await warmup and the complete replay.",
+          "R6 scheduler receipts resolve chunk/input20480 and maxrunning96 on all ranks, but max_total_num_tokens falls from17661184 to17545472 (-0.6552%) at unchanged mem_fraction_static. Preserve measured capacity; workspace/activation sizing and new-node state are possible contributors, not an isolated cause.",
+          "A separate optional tuning_moe_buffer receipt is implemented for future deployment. It reads aligned cap and exposed buffer.nbytes on each SGLang cache miss, with cache-hit silence and no group addresses. No R6 buffer-creation receipt exists. Subsequent isolated four-rank construction passed; see allocator-pressure-versus-pool-capacity for scope and aligned sizes.",
+          "R6 first15min (10 windows/~800s scrape spans) versus qualified R5b: computedprefill22489.63 vs20324.22/rank (+10.65%), decode2862.22 vs2774.23 (+3.17%), meanqueue15.58 vs19.85 (-21.52%), active31.46 vs28.11 (+11.91%), graphsteps26.99 vs28.82 (-6.34%). Host-hit work+30.35%, and initial cache state differs. Early scheduling evidence only; full replay and final score pending.",
+          "R6 15\u201330min (10 windows/~800s scrape spans) versus qualified R5b: computed prefill25312.25 vs22178.02/rank (+14.13%), decode3138.82 vs3062.96 (+2.48%), meanqueue18.66 vs27.88 (-33.06%), active38.83 vs34.69 (+11.93%), graphsteps22.59 vs24.73 (-8.68%). Host-hit work+44.75%; device-hit+0.67%. First-forward mean wait3.671 vs6.737s, with38 vs71 admissions above300s and22 vs47 above600s. Outstanding/continuation waits are excluded. Service gains persist after near-full logical host retention, but request/cache mix, node/backing and resolved-capacity differences remain; no full-score ranking or next intervention selected.",
+          "R6 30\u201345min (10 windows/~800s scrape spans) versus R5b: computed prefill24714.85 vs21465.13/rank (+15.14%), decode2937.24 vs2825.00 (+3.97%), meanqueue19.52 vs22.85 (-14.55%), active37.39 vs32.81 (+13.98%), graphsteps22.03 vs24.03 (-8.30%). Host-hit work+34.56%, device-hit-0.07%. Service gains persist, but first-forward mean wait5.464 vs5.154s and above600s admissions25 vs23; second-quarter wait improvement did not persist. No full-score ranking.",
+          "Full R6 canonical result:363061.07147total/2913.30073outputTPS/GPU,4GB200,3629.22231s canonical span unchanged;43126success+117draincancel=43243sent,0requesterrors,393traces,3600s sending,100%TTFT/ITLcoverage,output checks all match. Throughput+2.1577% versusR5b and+12.7534%storedSG,still14.4802%belowoverallvLLM. Computedprefill gains10.65\u201315.20% across quarters yielded a smaller logical total-TPS gain. ITLp50 worsens10.993\u219212.046ms; userp10/p50 falls81.952/90.965\u219275.829/83.013. TTFTp95/p99 improves butmaximum grows2561.266\u21923127.624s. Newnode/backing/capacity/cache differences prevent isolated/repeated effect claims. Qualified and archived; no IBPL submission.",
+          "R11 Q1 joins stored residuals to the same348sampled pass endings: all281admitted-and-stop OTHER cases and16pre-candidate budget stops have both input/chunk residuals nonpositive. Of50queue-scan endings,6also co-exhaust and44retain positive budgets; the one sampled request-slot stop retains both positive. This resolves the previous missing pass-end state without uniquely assigning co-exhaustion to one flag or making every exhausted pair the stop cause. Increasing a coherent budget remains conditional on full-run service benefit and validated workspace/KV cost.",
+          "R11 Q2 has344sampled endings:329of330OTHER cases and all14pre-candidate budget stops co-exhaust input/chunk. One OTHER case rejects the final candidate with both residuals256, a tracked continuation, and55unvisited candidates. This is consistent with another admission constraint, including the one-chunk rule, but the aggregate event stream does not join its exact first stopping predicate. Do not generalize Q1 to allOTHER or infer spare admissible capacity from positive residuals.",
+          "Prepared after R11: sampled adder_stop_site records26base PrefillAdder OTHER/NO_TOKEN return sites using only CPU literals on the original return branch. Per-call resets prevent ignored budget probes and earlier candidates leaking into the final result. Four new CPU contracts verify annotated sites, positive-residual chunk-slot/alignment/replay/capacity cases, unchanged budget order/call counts and admitted-versus-rejected semantics; the production-loop contract also checks that an ignored NO_TOKEN probe does not contaminate an unannotated custom add result. No R11 same-call attribution is retroactively inferred. ARM/full serving and isolated overhead remain pending."
+        ]
+      },
+      {
+        "id": "request-row-cap",
+        "graph_nodes": [
+          "config.max_running_requests",
+          "mechanism.request_admission",
+          "mechanism.dsv4_request_pool_sizing"
+        ],
+        "observation": "Request-slot encounters and a growing queue while device capacity remains available.",
+        "diagnosis": "Admission encountered a row/PP-count constraint, which may be an intentional tradeoff that protects graph coverage rather than an undersized knob.",
+        "alternatives": [
+          "An earlier gate can hide a later memory limit.",
+          "Increasing active rows can exceed decode graph capture coverage.",
+          "For DSV4, changing row capacity also changes fixed-state/SWA sizing and may change device FULL plus ratio-sized host retention. Read sizing logs before interpreting a pure admission effect."
+        ],
+        "check": "Compare resolved row and PP microbatch limits, running/held/beam rows, graph-use service and the canonical throughput/latency tradeoff. The aggregate gate merges pre-sort and candidate-loop sites and does not identify the minimum budget component. A sampled maximum below the cap does not exclude transient saturation.",
+        "action": "Do not raise a cap solely because its gate fires. If complete evidence shows useful work is constrained without sacrificing graph coverage or retention, test a bounded increase in the demonstrated component. When the cap protects capture coverage, first compare its full-run benefit against lost parallelism; expanding capture also requires memory validation.",
+        "expected": "More active work, if another gate does not replace this one.",
+        "reject_if": "KV gates/retractions immediately replace the row gate or latency worsens without useful throughput.",
+        "status": "R11 C512/cap64 full result qualified and rejected as best; cap protects graph service but its complete throughput tradeoff is unfavorable versusR6",
+        "runtime_evidence": [
+          "Fullbaseline sampledmax40running/rank versusresolved96cap; no request-row gate in retained emission windows. Increasing max_running_requests is not supported by these observations.",
+          "R7 first15min has persistent queues but sampled per-rank active maxima47/49/49/45 against96 cap and no observed row-cap events. Earlier gates can mask capacity checks, so this does not establish a row-cap bottleneck or justify increasing that limit.",
+          "R11 first0\u20137.5min retains11request-slot encounters (rank1=9,rank2=2) beginning in the4.5\u20136min window. Sampled running maxima reach62, not64; event sites merge PP/free/held/beam constraints and sampled gauges can miss transients. This does not justify undoing the cap or prove a unique max_running_requests bottleneck. Relevant non-graph series remain absent/unknown in these retained spans.",
+          "Qualified full R11:341312.95590total/2936.87294outputTPS/GPU,4GB200,canonicalspan3629.69227s,43936success+264draincancel=44200sent,zeroerrors/overflow,393entries,3600sending,100%TTFT/ITLcoverage and all43936measured outputs agree. All36archivefiles/1338831117bytes rehashed and writers terminal. Total+25.0618%versusR10 but-5.9902%versusbestR6 and-19.6031%versusrefreshedoverallvLLM. Reject this C512/cap64 point as a new best; return toR6C384 for the next performance candidate. This does not reject cap64 at other loads or isolate the cap from changed FULL/host capacities, backing and realized mix."
+        ]
+      },
+      {
+        "id": "device-capacity",
+        "graph_nodes": [
+          "mechanism.kv_memory",
+          "mechanism.hybrid_pools",
+          "config.mem_fraction_static",
+          "mechanism.dsv4_host_sizing",
+          "mechanism.dsv4_request_pool_sizing",
+          "log.dsv4_memory_calculation"
+        ],
+        "observation": "FULL/SWA/shared-capacity failures during queued work, or retractions under sustained load.",
+        "diagnosis": "The effective device-pool geometry or reservations cannot fit the workload.",
+        "alternatives": [
+          "Locked prefixes and future output reservation differ from physical usage.",
+          "Graph buffers, draft state and replay tails consume memory.",
+          "Wrapper memory_budget can duplicate a lower-level gate."
+        ],
+        "check": "Compare startup actual capacities, per-pool evictable/available tokens and reservation observations. Do not add wrapper and allocator events.",
+        "action": "Choose one evidenced intervention: modest static-memory increase if proven headroom, or lower active-request/reservation pressure; never infer memory from the flag alone.",
+        "expected": "Capacity gate clears without OOM/retraction or excessive recomputation.",
+        "reject_if": "Measured capacity does not change or another physical pool still binds.",
+        "status": "Startup capacity coupling observed; no isolated memory-bottleneck or performance benefit established",
+        "runtime_evidence": [
+          "R11 startup after reducing global request cap384 to256: all four ranks resolve64 rows and18,075,392 FULL tokens versus96 rows/17,545,472 in R10. Fixed SWA falls26.06 to25.32GiB at the same logged50.35GiB budget. This confirms a coupled sizing change, not physical headroom or a throughput gain. All eight Engram backing receipts now round to100%, unlike partial R10 backing; retain this confounder.",
+          "All-rank positive startup gauges confirm host FULL capacity35,090,944 to36,150,784 slots, exactly2times the corresponding device FULL capacity. R11 initial labels carried zero before a populated report10.000s later. These are logical FULL slots, not physical host bytes or every side pool."
+        ]
+      },
+      {
+        "id": "decode-graph-coverage",
+        "graph_nodes": [
+          "mechanism.graph_dispatch",
+          "metric.cuda_graph_passes_total",
+          "config.max_running_requests",
+          "mechanism.dsv4_request_pool_sizing"
+        ],
+        "observation": "Eager dispatch grows under high active batch sizes despite a configured decode graph runner.",
+        "diagnosis": "Decode/verify graph coverage may be insufficient, but the eager counter also includes prefill and idle paths.",
+        "alternatives": [
+          "Prefill is deliberately eager in the baseline.",
+          "Target versus draft and graph eligibility predicates differ.",
+          "A runner receipt does not prove every layer replayed.",
+          "Sampled local running-request counts can miss transient or DP-wide graph input sizes; non-size eligibility gates can fail below the configured cap."
+        ],
+        "check": "Use existing CUDA graph counters with producer-defined labels and actual phase context; obtain mode-specific dispatch evidence before attributing eager events to decode. In DSpark, decode-result eligibility comes from target verification, not all draft passes or layer-tail replay. Trace decode_cuda_graph_runner.can_run_graph before attributing a fallback to max_bs: overrides, layout/width, supported shape, DP eligibility, encoder, TBO and ngram conditions can reject it. DP gather can use the maximum DP batch size rather than a sampled local request gauge. Preserve absent lazy-created series as unknown; count fractions do not establish exposed time.",
+        "action": "After full-run evidence confirms relevant uncovered decode/verify sizes, choose one fresh trial: lower the resolved per-rank admitted-request cap within verified capture coverage, or increase capture coverage after validating added memory/KV cost. Keep trajectory load and other controls fixed when testing this interaction. Do not change the active replay.",
+        "expected": "Relevant graph replay recovers with useful token service and acceptable canonical throughput/latency; a row-cap trial may trade batch parallelism for faster steps.",
+        "reject_if": "Replay does not recover, the unsupported size/gate remains, or lost batch parallelism/KV retention makes the qualified throughput/latency tradeoff worse.",
+        "status": "R11 full replay qualified: graph service restored versus R10, but total throughput5.99%belowR6; retainR6",
+        "runtime_evidence": [
+          "R10 early measurement: decode_none first appears at profiling+349.118s with cumulative4perrank, then reaches14perrank by+579.121s. The observed endpoint delta is10perrank over230.002s; no invented zero baseline for earlier absence. The count establishes some target-result non-graph execution, not its failed predicate or critical-path cost. This early observation alone did not justify a capture-cap trial.",
+          "R10 Q2 final window28.5\u201330min: sampled rank3active reaches83 versus observed capturemax64; allranks decodegraph0.05/s and decode_none4.462/s, versus~20.2graphsteps/s in27\u201328.5min. Q3firstwindow30\u201331.5min has0graph/4.525nongraphsteps/s and rank3max81;31.5\u201333min partially recovers~10.125graph/2.287nongraphsteps/s. Existing draft-eager emission summaries showbatch65\u201388. No Q2native retry/OOMdelta. Source DP graph sizing takes max raw per-rank request count; explicit server cap divides byattn_dp_size. This supports a cap/coverage interaction but does not isolate first failed predicate or eager CPU versus GPU cost. Historical interim observation; see the qualified result and selected test below.",
+          "Qualified R10 scores272,915.46513total/2,387.65364outputTPS/GPU,24.83%below bestR6. Q3decode service falls52.79% versusR6; Q4 spontaneously recovers to20.037graphsteps/s and decode+2.12%. Earlier logical-cache decline and changed realized mix remain confounders. R11 keepsC512/capture64/cadence18, lowers admitted cap96 to64/rank and validates that limit at startup. FULL capacity rises3.0203% and backing changes; graph recovery and full throughput remain unproven.",
+          "R11 Q1, ten90s windows/~800s retained deltas: versusR10 decode+3.35%,logicalcache+5.29%,computedprefill-2.68%,queues-8.47%; versusbestR6 decode+3.83%,logicalcache-10.24%,queues+214.17%. Graphstep rate23.693/s is similar toR10Q1; absent non-graph series remain unknown. All sampled active maxima<=62, with11request-slot gate encounters. This early regime does not test the late R10Q3collapse or establish a full-run win.",
+          "R11 Q2 retains21.214graphsteps/s. At28.5\u201330min it retains21.200/s on every rank, versusR10about0.050/s; sampled running maxima50/36/49/42 remain below64. Q2decode+19.65%,prefill+7.33%,logicalcache+16.31%,queue-26.16% versusR10; versusR6decode-3.80%,prefill-6.24%,logicalcache-7.36%,queue+220.06%. Missingdecode_none remains unknown. This supports coverage recovery through the first historical transition, not zerofallback, isolated cap causality or a full-throughput win. Continue the full replay.",
+          "Prepared after R11 freeze: initialize the four Prometheus graph-mode children in init_new only on reporting ranks, using final rank/priority/custom labels. Five CPU contracts verify zero exposition, metrics-off/nonreporting-rank silence, explicit all-scheduler override, per-rank unchanged increments and idempotence without resets. Actual ARM/full serving coverage pending; R11 absent-series semantics remain unchanged. Even an exported zero requires live producer/identity/scrape coverage before interpreting no recorded fallback.",
+          "R11 Q3 retains20.932graphsteps/s againstR10 3.432/R6 22.034. Decode+112.21% versusR10 but+0.188%versusR6; prefill-5.14%,logicalcache-5.85%,queue+164.58%versusR6. No retained request-slot encounters; maxsampled52/47/48/52. The historical collapse is avoided in retained spans while overall improvement remains unproven. Complete Q4 and canonical qualification are required.",
+          "Qualified full R11:341312.95590total/2936.87294outputTPS/GPU,4GB200,canonicalspan3629.69227s,43936success+264draincancel=44200sent,zeroerrors/overflow,393entries,3600sending,100%TTFT/ITLcoverage and all43936measured outputs agree. All36archivefiles/1338831117bytes rehashed and writers terminal. Total+25.0618%versusR10 but-5.9902%versusbestR6 and-19.6031%versusrefreshedoverallvLLM. Reject this C512/cap64 point as a new best; return toR6C384 for the next performance candidate. This does not reject cap64 at other loads or isolate the cap from changed FULL/host capacities, backing and realized mix."
+        ]
+      },
+      {
+        "id": "routing-or-supply",
+        "graph_nodes": [
+          "mechanism.routing",
+          "mechanism.frontend",
+          "mechanism.parallel_geometry"
+        ],
+        "observation": "Full C256 baseline has modest sustained active batches and queues, sampled max40/rank versus resolved96 request cap, and no request/KV-capacity encounters in covered windows.",
+        "diagnosis": "At this load point, offered trajectory work may limit useful batch work. Spare request rows do not by themselves prove spare GPU compute or physical memory.",
+        "alternatives": [
+          "Workload trace lengths differ by lane.",
+          "Queue depletion can be caused by a slow upstream stage.",
+          "Router prefix approximation differs from server radix-cache state.",
+          "Prefill compute budget, CPU/synchronization critical path or graph coverage may limit scaling.",
+          "Additional lanes enlarge the cache working set and change closed-loop replay progress.",
+          "Changing trajectory concurrency changes canonical warmup volume and retained cache at profiling start. Preserve the preset; compare full workload/cache histories before attributing a gain to batching alone."
+        ],
+        "check": "Inspect the deployed router implementation, routing headers, client offered load, HTTP activity, per-rank arrivals and tier hit rates.",
+        "action": "After the higher-load diagnostic reveals persistent prefill pacing pressure, test interval24\u219218 at fixed C384 rather than raising an unused request-row cap. Judge only a completed, validated full candidate; keep cache/mix and placement alternatives explicit.",
+        "expected": "More useful active work and higher full-run throughput, with possible ITL/user-speed cost. Confirm complete canonical score and Pareto position; do not assume linear scaling.",
+        "reject_if": "Full throughput does not improve while queue/latency grows, active work fails to rise, or cache/graph/prefill/capacity effects explain lost scaling.",
+        "status": "C384 interval18 full result qualified; larger output service but little total-TPS improvement versus C256, with changed request mix and worse interactivity",
+        "runtime_evidence": [
+          "baseline-hour-r3 quartermean running19.84/22.24/23.17/24.36 and queue3.26/1.58/1.44/1.85 perrank; observed maxrunning40 versus96cap.",
+          "Late client10s sample0.439CPUcore with8allowed; transienteventloop warnings and disabledDP/devicetiming remain caveats.",
+          "Fullbaseline351476.99215totalTPS/GPU,2461.78012outputTPS/GPU;35868successes,18draincancellations,0errors,fullcoverage/OSLagreement.",
+          "load384-hour-r4 changes onlyclientCONC; same4GB200/source4e6/model/image/serverrecipe, full3600s aftercanonicalwarmup. Outcome pending.",
+          "C384 canonical warmup: 409 mandatory primers plus 3840 additional requests, 703.84s; C256: 285 plus 2560, 443.12s. First 90s host-anchor endpoints are about42\u201354% versus4\u201314%. Fresh deployment is not identical post-warmup state. Full C384 outcome remains pending.",
+          "C384 full diagnostic quarter running means24.39/30.00/29.02/27.51; queued21.94/31.14/27.35/27.56. Traffic/drain completed41561 requests with122 cancellations and0 errors, but an external allocation guard killed finalization. Terminal rates do not establish a validated throughput point; canonical aggregate missing.",
+          "Qualified C384 interval18 scores355392.77totalTPS/GPU (+1.11% versus C256 interval24) and2818.86outputTPS/GPU (+14.50%). Mean realized input length122255 versus141248; user speed p10/p50 drops to81.95/90.96tokens/s. Load, cadence, cache state and placement differ, so this is not an isolated concurrency or cadence effect.",
+          "Selected prospective R10: C384\u2192512 trajectory lanes at R6cadence18, unchanged servermaxrunning384global/96perrank and20,480effective capacity. This is a load-response experiment, not a diagnosed rowcap or absent-queue fix. Earlier C256\u2192384 increased output service, while R9 shows larger active batches can offset fewer decode steps. Competing outcome: added lanes merely deepen old queues/cachechurn or exceed64decodegraphcoverage. Full score, output, user speed, graphfallbacks and waittails decide; no gain claimed."
+        ],
+        "external_controls": [
+          {
+            "name": "AgentX --concurrency",
+            "owner": "canonical benchmark client",
+            "note": "Load-point axis external to SGLang server configuration; changing this does not raise server max_running_requests."
+          }
+        ]
+      },
+      {
+        "id": "host-table-backing",
+        "graph_nodes": [
+          "mechanism.engram_numa",
+          "log.engram_host_backing",
+          "config.SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT",
+          "config.SGLANG_NUMA_BIND_V2"
+        ],
+        "observation": "Host-table startup shows lower huge-page coverage on some ranks, optionally with a MADV_COLLAPSE error. Preserve the actual errno; do not assume all failures share a cause.",
+        "diagnosis": "Actual table backing differs despite identical layout settings; address translation and placement may confound rank latency.",
+        "alternatives": [
+          "Concurrent snapshot persistence/checksum or loader reads repopulate file cache.",
+          "NUMA-local contiguous memory or process affinity differs.",
+          "The workload may not expose host lookups enough for coverage to matter.",
+          "New-node backing skew persists even with staging complete: allocator fragmentation or loader-local pressure remains possible; staging concurrency is not a sufficient explanation."
+        ],
+        "check": "Read per-layer/rank coverage, /proc scheduler affinity and NUMA placement, host/cgroup headroom and staging completion. Correlate with matched-rank forward latency before attribution.",
+        "action": "Verify staging completion, actual backing and placement. A fresh deployment after staging is a possible controlled test, not a guarantee of uniform huge pages. Record persistent skew as an attribution limitation; choose a separate fixed-config placement/backing experiment when runtime evidence supports it. Do not infer measured slowdown from the startup warning.",
+        "expected": "If temporary staging pressure caused the backing skew, coverage may improve without a serving-config change.",
+        "reject_if": "Coverage stays skewed or improves without a latency benefit; do not claim a scheduler bottleneck or host-lookup speedup from the receipt alone.",
+        "status": "Startup backing skew observed; causal performance effect unverified",
+        "runtime_evidence": [
+          "native-r0 server.log at2026-10-22T17:28:33Z..17:28:35Z: layer14 rank2=30%, rank3=32%, ranks0/1=100%; immutable snapshot persistence still active.",
+          "cadence18-hour-r5 startup onlyris0032 at2026-10-22T22:07:16Z..22:07:17Z: layer1 rank0/1/2/3=76/70/83/85%, layer14=11/0/95/83%, collapseerrno12. Image/model hashing and staging completed before launch. Contrast priorfullruns rounded100%; startup receipt alone doesnotmeasure lookup slowdown. See campaign evidence/cadence18-hour-r5-startup-backing.json.",
+          "R5b fresh startup at2026-10-22T22:14:57Z..22:14:58Z: all8 table/rank receipts rounded100% (24064MiB huge outof24170/24171MiB resident). Backing improved on the same node after failedR5 shutdown, but allocator/loader history changed; no isolated lookup-speed claim.",
+          "R6 startup on lyris0237 at 2026-10-23T00:04:57Z..00:05:23Z: rank2 layer14 has 22528 MiB huge / 24171 MiB resident (93% rounded), with MADV_COLLAPSE errno22; the other seven table/rank receipts round to100%. Staging was complete. This differs from R5b and is an attribution limitation, not a measured slowdown."
+        ]
+      },
+      {
+        "id": "lazy-tail-graph-warmup",
+        "graph_nodes": [
+          "mechanism.decoder_tail_graph",
+          "log.decoder_tail_graph_capture",
+          "metric.cuda_graph_passes_total"
+        ],
+        "observation": "Decoder tail graph capture receipts while whole-prefill cuda_graph mode is prefill_none, with early warmup service variation.",
+        "diagnosis": "Layer-tail graphs are enabled independently of whole-prefill graph dispatch and capture lazily. Cold capture overhead is part of this window.",
+        "alternatives": [
+          "Cold prefix misses require real prefill work. Client reconstruction, request arrival skew and host-table backing can also alter early rates."
+        ],
+        "check": "Read capture timestamps/cumulative seconds and client phase together with per-rank useful prefill counters. Whole-forward none does not imply all layers are eager.",
+        "action": "Let canonical warmup progress before ranking steady-state rates. If tail coverage remains a hypothesis, obtain bounded replay/fallback counters before changing MAX_ROWS; keep MIN_PREFILL_TOKENS semantics separate.",
+        "expected": "Cold capture receipts taper as shapes are covered; steady-state benefit requires paired evidence.",
+        "reject_if": "Capture continues for new shapes, or useful rates do not stabilize; no conclusion from gate counts alone.",
+        "status": "Observed in baseline-r1 canonical warmup; causal performance effect untested",
+        "runtime_evidence": [
+          "baseline-r1 server.log 2026-10-22 11:02:50\u201311:03:00 Pacific: TP0 capture receipts despite prefill backend disabled."
+        ]
+      },
+      {
+        "id": "workload-pressure-drift",
+        "graph_nodes": [
+          "mechanism.routing",
+          "mechanism.request_admission",
+          "mechanism.prefill_decode_cadence",
+          "metric.num_queue_reqs"
+        ],
+        "observation": "Three early profiling windows have small batches and near-empty queues; later canonical idle-cap advances coincide with more long requests and larger queues.",
+        "diagnosis": "Offered work changes within the profiling phase. Early consistent windows can still represent only a light-load regime.",
+        "alternatives": [
+          "Client CPU/transport saturation; routing skew; server admission limits. Check client CPU and per-rank arrivals/gates rather than assuming one.",
+          "Changing trajectory concurrency changes canonical warmup volume and retained cache at profiling start. Preserve the preset; compare full workload/cache histories before attributing a gain to batching alone."
+        ],
+        "check": "Align benchmark phase and idle-cap events with request-length distributions, active batches, queues, cache rates and admission events.",
+        "action": "Characterize complete replay and retained-state transitions first. Select an intervention after full evidence; later calibrate shorter sections against full outcomes while keeping canonical workload rules unchanged.",
+        "expected": "A useful diagnosis remains supported after accounting for offered-load changes; measured server bottlenecks recur under comparable pressure.",
+        "reject_if": "Pressure shifts invalidate the earlier diagnosis, or a different gate appears. Reopen the hypothesis before applying a change.",
+        "status": "Observed across completed fullbaseline; initial short-window hypothesis revised before intervention",
+        "runtime_evidence": [
+          "baseline-r1-profile-w1/w2/w3 versus client idle-cap events after 2026-10-22T18:15Z; baseline-r1-client-cpu.json shows 0.50 CPU core used with 8 allowed.",
+          "Fullbaseline quartermeanISL117870/140683/153895/153133tokens; logicalhostanchors reachcapacity around33\u201334.5minutes, outside earlier15minute prefixes.",
+          "Identical-config first15minute decode-counterservice2368.15 versus2395.20tokens/s/GPU (~1.14% difference). This is diagnostic repeatability, not a scoredprefix or proof short runs rank full outcomes.",
+          "C384 canonical warmup: 409 mandatory primers plus 3840 additional requests, 703.84s; C256: 285 plus 2560, 443.12s. First 90s host-anchor endpoints are about42\u201354% versus4\u201314%. Fresh deployment is not identical post-warmup state. Full C384 outcome remains pending.",
+          "C384 full send/drain completed but postprocessing was killed while waiting for server_metrics. All40 server windows survive; the raw request checkpoint ends around48.5minutes. No full request-level or canonical-score claims can be recovered from that prefix."
+        ]
+      },
+      {
+        "id": "length-versus-cache-cost",
+        "graph_nodes": [
+          "config.enable_cache_report",
+          "mechanism.http_cache_accounting",
+          "response.prompt_cached_tokens",
+          "metric.prefill_effective_tokens_total"
+        ],
+        "observation": "Similar input-length strata have radically different TTFT across AgentX elapsed-time bins; optional per-request cached-token usage is missing.",
+        "diagnosis": "Input length is not computed prefill work. Cache reuse, transfers and changing trajectory mix can mimic a cadence or compute-cap effect.",
+        "alternatives": [
+          "Actual scheduling/cadence or host restoration may still explain latency.",
+          "Live completed-record samples exclude unfinished long-tail requests."
+        ],
+        "check": "Use finalized elapsed-time/length strata, server tier counters and phase accounting. Enable per-request cache reporting in a separately recorded instrumentation trial when aggregate evidence cannot discriminate.",
+        "action": "Do not tune chunk size or cadence solely from aggregate TTFT. Obtain cache reporting without changing canonical scoring, then compare input minus cached tokens alongside queue/gate evidence.",
+        "reject_if": "Reporting remains absent, changes token accounting, adds unacceptable overhead, or cache-conditioned evidence does not support the proposed mechanism.",
+        "status": "Source-audited reporting path; not enabled or GPU-validated in baseline-r1/cadence12-r2",
+        "runtime_evidence": [
+          "GB200 baseline-r1: >524288-token TTFTp95 163111ms in300\u2013600s versus1197ms in600\u2013900s,86/103completed records; latency contrast is evidence of ambiguity, not proof of cache causality."
+        ],
+        "expected": "Optional cached-token field becomes available while logical token counts and workload rules stay unchanged."
+      },
+      {
+        "id": "cache-retention-versus-migration",
+        "graph_nodes": [
+          "mechanism.host_cache",
+          "config.hicache_ratio",
+          "config.hicache_write_policy",
+          "metric.evicted_tokens_total",
+          "metric.hicache_dropped_tokens_total",
+          "metric.hicache_backup_duration_seconds",
+          "mechanism.dsv4_host_sizing"
+        ],
+        "observation": "Host-cache occupancy grows beyond the first15minutes while device eviction/backups continue; device-without-backup drop counters remain zero in observed windows.",
+        "diagnosis": "Device eviction may be normal tier migration. Full/L2 working-set pressure is plausible later, but neither low activeKV usage nor zero device-drop counters proves spare retention capacity.",
+        "alternatives": [
+          "Context/branch mix and routing can change cache reuse without a capacity limit.",
+          "Host restore or blocking backup may matter even when data is retained.",
+          "Cache TP coordinates differ from scheduler TP coordinates under DPattention.",
+          "DSV4 generic host-used/total gauges measure logical FULL anchors, which own no KV tensor; compressed/SWA physical pools and total host RAM are not represented by that percentage."
+        ],
+        "check": "Preserve DP/attentionTP/pool labels; compare available/evictable/used tokens, host occupancy, computed versus cached input, drop deltas and operation-duration deltas across the full replay. Do not add overlapping eviction/backup durations. DeepSeek V4 derives host pages from device page capacities times hicache_ratio and rejects positive hicache_size. A lower static-memory fraction can shrink both device and ratio-sized host retention if it lowers resolved pool capacity. Inspect actual capacities and physical bytes; a compensating ratio need not preserve all side pools.",
+        "action": "Change host size/write policy only after the full-run evidence identifies retention or transfer cost and actual memory permits it. If host churn is ambiguous, add bounded requested/freed host-eviction summaries at evict_host and verify before a capacity intervention. On DeepSeek V4 use the supported ratio control, not an explicit positive hicache_size; treat any simultaneous static-memory/ratio adjustment as a coupled intervention.",
+        "expected": "A true retention limitation should show late reuse/recompute changes or host eviction evidence; added host-eviction observation distinguishes ordinary L2 eviction from unbacked device drops.",
+        "reject_if": "Workload/routing changes explain the signal, transfers are not exposed, or no retention benefit remains after matching relevant regimes. Zero device-drop counts alone cannot reject ordinary L2 eviction.",
+        "status": "Fullbaseline retention evolution observed; ordinaryhost-eviction attribution remains incomplete",
+        "runtime_evidence": [
+          "baseline-hour-r3 host occupancy~49\u201371% at16.5min, device eviction/backups continue, all observed hicache_dropped_tokens_total deltas0 through21min.",
+          "Cache metrics dp0\u20133/tp0 are attention-mesh labels; scheduler tp0\u20133 are global labels in this DEP4 run.",
+          "Fullbaseline reported logical host anchors reach100% on allranks by33\u201334.5min. Existing source _log_hicache_stats, DeepSeekV4 strategy and LogicalHostPool establish scope. No all-component/physical100%claim.",
+          "All40fullbaseline windows: logicalanchor capacity reached by33\u201334.5min without sharp persistent computedprefill/queue deterioration; observed device-without-backup droppedtokensdelta0. This does not establish absence of ordinaryhosteviction.",
+          "R9/R10 startup resolves mem_fraction_static0.76,hicache_ratio2,hicache_size0,hicache_host_memory_fractionNone. CPU source examples verify device FULL pages16\u219212 at ratio2 shrinks host pages32\u219224; compensating ratio8/3 restores FULL32 but changes a fixed four-page SWA pool8\u219210. This is sizing algebra, not a GPU capacity or performance prediction."
+        ]
+      },
+      {
+        "id": "producer-enablement-before-zero",
+        "graph_nodes": [
+          "config.SGLANG_ENABLE_METRICS_DP_ATTENTION",
+          "config.SGLANG_ENABLE_METRICS_DEVICE_TIMER",
+          "mechanism.measurement",
+          "metric.scheduler_stage_seconds_total",
+          "metric.dp_attention_token_imbalance_ratio",
+          "metric.dp_attention_sync_wait_seconds"
+        ],
+        "observation": "DP imbalance/synchronization histograms remain zero while scheduler stage labels show forward_overlap=none.",
+        "diagnosis": "These values may reflect disabled producers and unavailable device timing, rather than balanced ranks or exposed CPU bottlenecks.",
+        "alternatives": [
+          "Enabled producer with no eligible multi-rank gather or only health probes.",
+          "Rank-local reporting restrictions.",
+          "Actual low imbalance or low synchronization cost requires positive count coverage."
+        ],
+        "check": "Inspect explicit launch controls and in-process resolved producer values where available; source defaults are context. A missing /proc/PID/environ entry does not prove unset: setproctitle can overwrite that memory while Python getenv retains the value. Verify eligible paths, reporting ranks and positive histogram count deltas. Stage wall time includes waiting; endpoint overlap labels do not measure exposed GPU gaps.",
+        "action": "Reuse available per-rank workload/cache signals first. If synchronization or overlap attribution becomes decision-critical, enable the relevant existing producer in an explicitly identified instrumentation run and measure overhead before performance comparisons.",
+        "expected": "Positive eligible count coverage and interpretable rank-local observations; unchanged serving work must be independently checked.",
+        "reject_if": "Counts remain absent, coverage is inadequate, or instrumentation changes performance enough to confound the comparison.",
+        "status": "Producer paths/defaults source-audited; procfs omissions do not independently verify runtime disablement. No instrumentation flag change.",
+        "runtime_evidence": [
+          "baseline-hour-r3 restricted procfs snapshot omitted both producer flags; pinned defaults are False and launch config does not request them. Earlier wording that this verified disablement is withdrawn. Zero histogram counts and overlap none still cannot establish no synchronization or exposed CPU time.",
+          "R5b CPU-only spawned-process probe in the same image reproduced procfs omissions after setproctitle while Python getenv retained known values. See campaign evidence/proc-environment-title-probe.json. Live scheduler procfs omissions are therefore inconclusive; no server mutation was made.",
+          "R11 first fully labeled HiCache capacity scrape reports0on all four ranks;10.000s later all report36,150,784. Source stats default0 and prefill/decode reporting populates them. A present series can still reflect initialization, so zero alone does not establish disabled HiCache or zero capacity."
+        ]
+      },
+      {
+        "id": "resolved-cache-backend",
+        "graph_nodes": [
+          "config.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+          "config.SGLANG_RUST_BUILD_MODE",
+          "mechanism.tree_core_selection",
+          "log.unified_tree_core"
+        ],
+        "observation": "A fresh deployment fails to load a Rust TreeCore binding, or reports a different constructed TreeCore despite matched source/configuration.",
+        "diagnosis": "Backend resolution depends on toolchain availability, build mode and extension visibility beyond tracked Python source.",
+        "alternatives": [
+          "Unsupported cache components/platform can intentionally fall back to Python.",
+          "Different inherited environment, source-overlay native artifacts or compiler workspace can change selection."
+        ],
+        "check": "Compare prior per-rank Init Unified Radix Cache/Tree Core lines. Check compiler queries in the source-defined workspace, requested backend/buildmode, binding import spec and effective source path.",
+        "action": "For reproduction, explicitly select the backend the prior run actually constructed, then verify allrank construction receipts. A native-backend experiment is a separate intervention requiring compatibility/correctness validation.",
+        "expected": "Matched constructed class and successful initialization; no throughput gain is inferred from backend naming.",
+        "reject_if": "Resolved backend still differs, construction fails, or compatibility tests fail; never substitute an arbitrary binary just to bypass startup.",
+        "status": "Python cache construction verified on all four R5b/R6 ranks; both full results qualified, no isolated backend-speed claim",
+        "runtime_evidence": [
+          "Fullbaseline-hour-r3 andload384-hour-r4 logs showPythonUnifiedTreeCore onall4ranks after cargoqueryfailure. R5 sourcehashesmatch but compiler1.92.0 queries succeed, imagebuildmode never and overlaybinding absent; startupfails at22:10:18UTC. evidence/cadence18-hour-r5-runtime-backend.json preservescorrectworkspace query.",
+          "cadence18-hour-r5b at2026-10-22T22:16:04Z: all4 ranks logged Tree Core: UnifiedTreeCore. Explicit Python selection reproduces the actual prior implementation without copying/building a Rust binary. Startup receipt: campaign evidence/cadence18-hour-r5b-startup-check.json."
+        ]
+      },
+      {
+        "id": "prefill-ordering-and-aged-queues",
+        "graph_nodes": [
+          "config.schedule_policy",
+          "mechanism.prefill_ordering",
+          "metric.queue_time_seconds",
+          "metric.time_to_first_token_seconds",
+          "log.shortest_prefill_order",
+          "event.prefill.chunk_slot",
+          "log.policy_pass",
+          "log.policy_producer_config",
+          "config.SGLANG_TUNING_POLICY_INTERVAL"
+        ],
+        "observation": "Persistent mixed-work queues and long first-forward waits coexist with many fast requests; client TTFT tails are much longer than connection/send overhead.",
+        "diagnosis": "Admission ordering may repeatedly favor inexpensive uncached work. Shortest-prefill-first uses age only as a tie-breaker; initial queue waits are distinct from later chunk execution and router delay.",
+        "alternatives": [
+          "Cadence, token/capacity gates or cache readiness can delay admission independent of sorting.",
+          "An increase in observed long waits can mean old backlog is finally being admitted; still-waiting requests remain censored.",
+          "Closed-loop trajectory progress and cache locality change with policy; total input length is not uncached work.",
+          "Shortest-prefill-first uniquely reserves continuation budget for shorter waiting requests and gates the chunk-slot event. HRRN removes that reservation, so a single policy flag changes more than sorting; absent chunk-slot events under HRRN are expected producer semantics."
+        ],
+        "check": "Use source-defined queue histogram bucket/count/sum deltas by rank and observation time, plus finalized client request-start strata and cancellations. The sampled shortest_uncached log describes the first sorted request, not the oldest. Verify HRRN processed-token arrival/accounting path before proposing it. HRRN age advances with processed prefill tokens, not wall time; inspect queue-entry/requeue snapshots. Record continuation-reservation changes and event producer conditions before comparison. Distinguish current queue-episode perf_counter age from submitted-token age and actual readiness: sorting precedes budget/prefetch/staging checks. Unified reentry resets both age origins. HRRN and SPF estimate output-bearing work differently; establish its incidence before using that difference to explain performance. Verify tuning_policy_config and sample coverage by rank. Read queue snapshots, visit outcomes and continuation separately; candidates not visited have unknown readiness, and a selected head is not necessarily admitted. Compare paired age/work within the same record. Snapshot counts are not request arrival rates or wait seconds. Configured HRRN falls back to FCFS above128waiting requests. Check effective_policy and queue_snapshot_available before interpreting sort-derived fields; candidate work retains the configured-policy estimate. Source fallback alone does not establish R7 incidence. A visit labeled admitted can still end the pass with OTHER/NO_TOKEN. Use optional pass_end when deployed; pass_budget_stop counts only the pre-candidate gate and must not be treated as all budget-limited passes. Missing pass_end is unknown; adder categories do not isolate KV/input/chunk causes.",
+        "action": "Validate the new sampled diagnostics on R6/SPF first. Old queued work while the selected head repeatedly has smaller estimated work motivates a policy/reservation test, but eligibility is unproven. Old visited candidates reporting prefetch/staging pending motivate cache-readiness investigation. Repeated budget stops plus observed continuation reservation/admission motivate budget or reservation changes after memory validation. Use complete full-run throughput, tails and cancellations to choose among these actions; no automatic action from one sample.",
+        "expected": "An aging/order change should alter which work is admitted, reduce persistent old backlog or improve finalized tails, with possible loss of prefix locality and throughput.",
+        "reject_if": "No improvement in finalized tails/backlog or trajectory progress, or unacceptable loss of qualified total/output throughput or latency Pareto position. Do not accept based only on fewer emitted long-wait observations.",
+        "status": "R7 completed the canonical full-hour HRRN trial: 306,019.90659 total TPS/GPU and 2,385.34925 output TPS/GPU, 15.7112% below R6. Retain R6/SPF as the best local throughput configuration; reject this HRRN configuration for the throughput objective. No IBPL submission. R8 ended during warmup after interactive steps were cancelled; no canonical throughput result exists. Initial all-rank emission is verified. R8b retries unchanged performance settings under durable Slurm batch ownership; full coverage and overhead remain unvalidated.",
+        "runtime_evidence": [
+          "First30min retained windows (~1600s counter coverage): C256 interval24 has16166 first-forward observations and3 waits>300s; C384 interval24 has19419 and59; C384 interval18 has19699 and84. These are observation-time cohorts, not matched requests or full1800s totals. C384 interval24 is unqualified after finalization loss.",
+          "Final C384 interval18 TTFTp99 is58.508s, maximum2561.266s;128drain cancellations remain separately accounted. Queue-age observations establish delayed admission but do not isolate ordering from budget/readiness. The next selected test addresses compute budget; an aging-policy experiment remains an alternative.",
+          "R6 first15min has9945 first-forward observations, meanwait2.7108s and16 waits>300s; R5b has9639,2.5577s and13>300s. These admission-time cohorts omit still-waiting and continuation work. Lower mean queue does not alone establish improved tail latency or policy quality.",
+          "R6 15\u201330min admission meanwait3.671 vsR5b6.737s improved, but30\u201345min reverses to5.464 vs5.154s despite14.55% lower mean queue and15.14% higher computed prefill. Above600/1200s admissions25/13 vs23/11. This is a counterexample to inferring tail quality from queue depth or one quarter; different cohorts and still-waiting/continuation work prevent isolated policy attribution. Keep the current policy fixed until full replay and final accounting.",
+          "CPU audit of actual methods unchanged from frozen R6: with20480 budget,256-token pages and2000/3000-token shorter waiting requests, SPF caps a continuing100000-token request at15360 while HRRN returns no policy-specific limit. A synthetic older10000-token request outranks a newer1000-token request under HRRN token aging but not SPF. This confirms source behavior only, not a selected/GPU-tested policy experiment or throughput benefit.",
+          "Final R6 has TTFTp99=49.292s versusR5b58.508s, butmaximum3127.624s versus2561.266s and117drain cancellations. Fourth-quarter admission meanwait6.023 vs4.964s,above1200s17 vs8,despite lower mean queue. This supports investigating persistent old-work service, not a demonstrated ordering fault or universal tail regression. A policy change must preserve the full observed throughput/interactivity tradeoff and account for continuation-reservation coupling.",
+          "R7 launched on the same allocation/node after verified R6 preservation and idle-probe clearance. Only schedule_policy changes SPF to HRRN; C384, interval18 and requested 20480-token budgets remain fixed. Resolved max_total_num_tokens17545472 and per-rank maxrunning96 match R6. All eight host-table receipts round to100%, compared with one93% receipt in R6; preserve this startup difference and fresh-cache/closed-loop mix as confounders. Full canonical replay pending; disappearance of SPF-only signals is not proof of relief.",
+          "R7 canonical warmup completed4249 requests with0errors/cancellations; actual3600s profiling began2026-10-23T02:00:46.017Z. First90s window has all4rank observations,9emissions/rank,~80s scrape spans and actual admitted extend maximum20480 on every rank. Queues remain small in both R7 and R6 initial windows, so this checks instrumentation and limits, not aged-work behavior or policy performance.",
+          "CPU audit of four actual methods identical to frozen4e6e7f8: a source-derived output-bearing case (origin10000/output5000/matched12000) has SPF cost3000 but HRRN cost0, reversing its ordering against fresh1000-token work. This case is not evidence of R7 incidence. Equal HRRN token-age/work ties use rid lexical order rather than wall wait; temporary prefix deferral still overrides cached priority. run_batch advances the token counter before execution; queue reentry resets arrival counter and perf_counter timestamp. Proposed diagnostics distinguish these populations without per-request identifiers.",
+          "R7 first full15min versus R6:10 aligned windows/~800s counter spans; computed prefill22466.23 vs22489.63/rank (-0.10%), decode2460.87 vs2862.22 (-14.02%), active27.47 vs31.46 (-12.68%), queue27.63 vs15.58 (+77.32%). Decode graph steps-1.52%, device-hit work-7.70%, host-hit+1.74%. First-forward cohort8764 vs9945, mean wait8.9675 vs2.7108s, waits>300s17 vs16. These omit still-waiting/continuation work; larger mean does not prove worse ultimate starvation. CPU process seconds/s0.771 vs0.789 does not isolate critical-path cost. All-rank logical host retention first>=99.9% at13.5 vs15min; initial cache/backing and closed-loop mix differ. Similar compute is producing less decode/active work in this regime, consistent with changed ordering/continuation but not uniquely caused by it. Complete full replay; no final ranking or early stop.",
+          "R7 completed the canonical full-hour HRRN trial: 306,019.90659 total TPS/GPU and 2,385.34925 output TPS/GPU, 15.7112% below R6. Retain R6/SPF as the best local throughput configuration; reject this HRRN configuration for the throughput objective. No IBPL submission. Client exited 0; 35,694 sent = 35,546 successful + 148 canonical drain cancellations, zero request errors/overflow, all 393 traces, 3,600-second sending window, 100% TTFT/ITL coverage and matching output targets for every successful request. submission_valid=true. Canonical span 3,629.10494 seconds and four-GPU denominator retained unchanged.",
+          "Across all four quarters versus R6, computed prefill changed -0.10/-0.68/-1.19/-1.33%, while decode service fell 14.02/21.52/15.87/21.87% and mean active work fell 12.68/21.70/15.88/20.09%. Mean queues rose 77.32/139.81/136.74/122.53%. Decode graph steps changed only -1.52/-0.91/-1.18/-1.91%. Similar compute and step cadence sustained smaller active batches and less decode progress throughout the replay. Ordering/continuation is a supported candidate mechanism, not uniquely established causation; cache reuse, readiness and realized closed-loop mix remain confounders.",
+          "R7 TTFT p50/p95/p99 was 5.784869/54.381371/249.695625 seconds versus R6 0.866107/5.885721/49.292392. Maximum completed TTFT improved from 3127.624 to 899.663 seconds, while drain cancellations increased 117 to 148. User speed p10/p50 fell from 75.82923/83.01271 to 75.06397/82.43866 tokens/s. This is not universal latency dominance; improving the worst completed wait did not improve throughput or typical latency.",
+          "All 40 finalized diagnostic windows have complete endpoints. Each quarter retains about 800 seconds of counter spans, not 900. Q2-Q4 were analyzed after completion; continuous interactive monitoring after Q1 is not claimed. Both optional memory diagnostics were absent from R6/R7.",
+          "New default-off policy diagnostics passed CPU production-sort, continuation-limit, lifecycle and actual admission-loop contracts, including unchanged readiness call counts. Serving coverage and overhead pending; neither R6 nor R7 contained these records.",
+          "R8 interruption: observer/server/router/client cancelled together at2026-10-23T05:49:12-13UTC, before profiling began. Last warmup4213/4249returned,4218sent,5inflight,0errors. No performance conclusion. Partial artifacts preserved unchanged; R8b uses the same1422f5c executable and full3600s measurement. Serving overhead cannot be isolated from unmatched startup backing and node/cache state.",
+          "R8b Q1:87policy samples and90native snapshots perrank,allSPF/knownages. Outstanding oldest episode approaches600seconds;29samples perrank pair an age>300seconds with a cheaper selected head. No sampled prefetch/staging pending, but unvisited readiness unknown. Source audit shows admitted visits can also terminate the pass; developed separate pass_end fields with CPU production-loop equivalence including admitted+NO_TOKEN/OTHER. Not present in R8b.",
+          "R8b SPF samples acrossfullreplay show cheaperheads while oldestepisodesgrowto3081\u20133298s. No sampledreadinesspending outcomes, but unvisitedreadinessunknown. Q2oldestprefixdeferred only0/0/2/0of86perrank; output-bearing queue-key appearances0. These do not establish a unique throughput cause. Admission can terminate a pass: new8245279pass_end distinguishes that inR9;30actualARMcontracts passed, servingcoveragepending.",
+          "R9 newpass_end emitted in all1387sampled profiling passes across4ranks:1177adder_result(other),121precandidatepass_budget_stop,89queue_scan_exhausted.1172of1177adder endings followed admission. No request_slots_stop observed. This resolves admission-versus-pass-stop ambiguity, but OTHER still obscures exact resource; sample aggregation is not unique requests or blockedtime. Add scalar residuals/existing stop-site attribution before attributing OTHER solely to inputbudget. Oldest episodes reach2796\u20133294s; unvisited readiness remains unknown.",
+          "R9 OTHER ambiguity prompted optional stored budget_remaining fields at pass finalization: rem_input_tokens,rem_chunk_tokens,rem_dllm_tokens. No added budget_state/capacity/readiness call or tensor conversion; preserve simultaneous nonpositive residuals and null/missing distinctions.31CPUcontracts pass including actual loop+finalization enabled/disabled equivalence; not deployed in frozenR10source52e9060, ARM/full serving validation pending. Residual exhaustion supports a budget explanation but is not exact branch attribution.",
+          "R11 initial startup/warmup validates stored pass-end residuals on all four ranks:50/50sampled passes include input/chunk values,44have both nonpositive. This resolves the stored budget state at these pass ends but does not uniquely choose between co-exhausted controls, describe unvisited readiness or establish a profiling bottleneck. Absent dLLM fields remain absent, not invented zeros."
+        ]
+      },
+      {
+        "id": "allocator-pressure-versus-pool-capacity",
+        "graph_nodes": [
+          "mechanism.kv_memory",
+          "mechanism.measurement",
+          "log.cuda_allocator_snapshot",
+          "config.SGLANG_TUNING_CUDA_ALLOCATOR_STATS",
+          "log.moe_buffer_creation",
+          "mechanism.dsv4_host_sizing"
+        ],
+        "observation": "GPU management snapshots show very little free memory, possibly without corresponding KV admission failures.",
+        "diagnosis": "Physical usage is not decomposed by logical KV utilization or the configured static fraction. Live tensors, reserved allocator blocks, graph/private pools and external symmetric buffers are competing contributors.",
+        "alternatives": [
+          "A large reserved footprint may coexist with reusable blocks; reserved minus allocated is not guaranteed reclaimable.",
+          "PyTorch stats may exclude custom/private pools and external library allocations.",
+          "Request shape, startup history and lazy capture differ across ranks and runs.",
+          "Native high-water counters can predate the observed quarter or be reset by another caller. Distinct peak fields need not coincide; their sum is not peak memory usage."
+        ],
+        "check": "Retain timestamped GPU samples and resolved pool capacities. On a later validated deployment, enable the optional native-allocator snapshot and inspect allocated/reserved/active bytes plus same-process retry/OOM counter deltas. Unsupported, missing and error statuses remain unknown. Use actual buffer-creation receipts for external allocation provenance. Size external buffers with the resolved aligned cap. Retire earlier unaligned API estimates as actual allocation or headroom evidence; no corrected baseline delta was measured by this probe. If considering less static KV allocation to create runtime slack, trace the actual sizing path and account for ratio-sized host retention; lower logical KV occupancy does not establish that lost prefix retention is free.",
+        "action": "Keep an active benchmark unchanged. If an actual allocation failure occurs, preserve it and choose one memory-headroom intervention for a fresh trial. When memory provenance is ambiguous, validate and enable bounded allocator/buffer receipts in a separate instrumentation trial before attributing low free memory to a particular config. Never flush caches or reset peaks in a live comparison to manufacture headroom.",
+        "expected": "Allocator snapshots distinguish supported native allocator counters from unknown external/pool contributions; a later headroom intervention should reduce actual allocation failures without an unacceptable capacity/throughput loss.",
+        "reject_if": "Snapshot coverage/backend is unknown, observation changes behavior materially, or only a reserved-memory subtraction supports the claimed cause.",
+        "status": "Reset-scoped peaks pass idle ARM/API checks and initial four-rank R11 pre-profiling coverage. Full measured-phase coverage and serving overhead remain unvalidated. No larger workspace trial selected.",
+        "runtime_evidence": [
+          "R6 warmup reported rank2 free193/141/117/43MiB at management samples while requests continued without reported errors. Later free space recovered on rank2 while rank0 approached41MiB. These snapshots alone do not prove OOM or isolate live versus reserved memory.",
+          "Idle GB200 GPU0 check after R6 preservation:64MiB tensor raised allocated/reserved to67108864bytes; after release allocated/active returned0 while reserved remained67108864.250sampler calls median87.6485us,p95113.216us,max169.728us. Uninitialized call created no CUDA context; explicit init/sync/flush/reset calls forbidden during sampling; nonempty recorder window integration passed. This distinguishes owned allocated versus cached reservation in this scope only; not production serving overhead or external/private memory coverage.",
+          "Idle four-rank GB200 check on pinned image: requested cap 20480 aligned to 21120, alignment 1920, 150 SMs. Actual exposed buffer bytes matched aligned extension size queries on every rank: target shared0/1=7376607104/7719933824; draft shared0/1=3706427264/4049753984. Receipt added no explicit Python init/sync/flush/reset or sizing query during sampling. Library construction may legitimately synchronize. Four candidate geometries do not prove serving key presence, model correctness, full SGLang cache integration or serving overhead; timing used mock log capture.",
+          "R8 actual serving init produced target/draft exposedbufferbytes7719933824/4049753984 on everyrank,requested20480/aligned21120,shared1. Early native snapshots allstatusok,allocated~153.4GB,reserved~173.9\u2013178.1GB,OOM0. Low physical free memory cannot be attributed solely to live allocation. Reserved gap is not guaranteed reclaimable; await later warmup/full replay and preserve external/private/transient exclusions.",
+          "R8 interruption: observer/server/router/client cancelled together at2026-10-23T05:49:12-13UTC, before profiling began. Last warmup4213/4249returned,4218sent,5inflight,0errors. No performance conclusion. Partial artifacts preserved unchanged; R8b uses the same1422f5c executable and full3600s measurement. Serving overhead cannot be isolated from unmatched startup backing and node/cache state.",
+          "R8b all4quarters/all4ranks have native snapshots with no new observed retry/OOM endpoint deltas. Warmup cumulative retry count reached1/rank; later cumulative1 is not a new event. Physicalfree sampled~700MiB during warmup and1059MiB inlaterquarters; reserve-minus-allocated is not proof of safe workspace growth. Eight actual target/draft creation receipts provide partial exposed buffer accounting; transient/private/external peaks remain unknown.",
+          "Prepared after R10freeze: optional native peak counters retained from the existing single memory_stats call, separately scoped since the last peak reset. No extra allocator API call/reset/sync.32CPUcontracts pass, including preserving a decreasing counter rather than hiding resets. Pinned-image API/all-rank serving validation pending. The local GraphPoolPrecarve.measure and DFlash sampling code can reset peaks; neither is evidence that a reset occurred in this run. External/custom/private allocation coverage and total physical peaks remain unresolved.",
+          "R11 frozen sourceb6df8ee passed22+10actualARMcontracts and a GPU0native peak API/release-retention probe. Initial startup/warmup has53successful native snapshots across four ranks, each with all four peak fields and native_allocator_since_last_peak_reset scope. Initial50sampled policy passes all carry residuals;44coexhaust input and chunk budgets. Warmup coverage does not establish measured-phase pressure, isolate instrumentation overhead or expose physical/external/private-pool peaks.",
+          "Exact canonical R11 warmup bounds18:33:11.114\u201318:49:16.593UTC contain383native snapshots (96/95/96/96 byrank0/1/2/3) and364policy samples (92/86/93/93), with all new fields present. Earlier50policy/53native counts included startup health traffic before warmup; treat them as pre-profiling availability checks. Profiling begins18:49:16.788UTC; do not assign preceding cumulative retries to measurement.",
+          "R11 Q1 has358successful native snapshots acrossfourranks with peak fields/scope, and zero observed retry/OOMincrements. Native allocated/active high-water values are unchanged from first to last sampled endpoints, consistent with earlier startup/warmup peaks; this is not a per-quarter peak bound or spare-memory estimate. Lowest paired physicalfree endpoints byrank0/1/2/3 are4401/2087/2137/3993MiB. No larger workspace selected from these endpoints.",
+          "Frozen R11b6 full measured interval contains1432successful native snapshots acrossfourranks, with peak scope/fields and no observed retry/OOMincrements between retained endpoints. All1383sampled policy passes carry budget residuals. This completes field-availability coverage for R11, not physical peak headroom or isolated instrumentation overhead. New graph-counter zero baselines and returned stop sites were prepared after freeze and remain undeployed."
+        ]
+      },
+      {
+        "id": "optional-image-backend-startup",
+        "graph_nodes": [
+          "config.image_processor_backend",
+          "mechanism.optional_image_backend_probe",
+          "log.image_backend_fallback",
+          "config.SGLANG_RUST_BUILD_MODE"
+        ],
+        "observation": "Startup stops before weight loading; some ranks emit PIL fallback but another remains in an optional cargo version subprocess.",
+        "diagnosis": "The optional auto image-backend probe can invoke Rustup toolchain setup. Other ranks may wait for the blocked rank even on a text-only workload.",
+        "alternatives": [
+          "Distributed initialization, weight I/O, compilation, or loader errors can also leave quiet logs; confirm the exact child and source interval."
+        ],
+        "check": "Inspect actual per-rank milestones and the owned cargo child command, parent and executable. Missing fallback warning is unknown, not success. No throughput diagnosis follows from this startup delay.",
+        "action": "On the next fresh text-only deployment, explicitly select --image-processor-backend pil to reproduce the previously observed fallback; verify parser/resolved backend. Do not change a running config. A pre-traffic recovery may terminate only a positively identified stalled optional child to exercise existing fallback, with the intervention recorded.",
+        "expected": "The optional Rust image probe is bypassed and startup reaches weight loading without waiting for toolchain installation. No throughput gain is claimed.",
+        "reject_if": "The stall is elsewhere, PIL is rejected, effective backend differs, or image-input semantics are required and have not been validated.",
+        "status": "R8b pre-traffic recovery verified. Explicit PIL launch is source-supported but not yet deployed or runtime-verified.",
+        "runtime_evidence": [
+          "R8b rank2 waited in cargo --version --verbose via /root/.cargo/bin/rustup. Exact verified child was terminated before traffic at08:13:43UTC; rank2 emitted PIL fallback and all ranks reached weight loading at08:13:45. Historical R6/R7 logs also report PIL fallback."
+        ]
+      },
+      {
+        "id": "model-backend-topology-compatibility",
+        "graph_nodes": [
+          "mechanism.dsv41_execution_compatibility",
+          "config.dsv4_attn_backend",
+          "config.disaggregation_mode",
+          "config.cuda_graph_backend_prefill",
+          "log.dsv41_trtllm_pd_rejected",
+          "log.dsv41_trtllm_prefill_graph_rejected"
+        ],
+        "observation": "Startup reports an unsupported backend/PD/graph combination before benchmark traffic.",
+        "diagnosis": "The model-specific compatibility checks reject the configuration; this is not evidence of insufficient queue capacity or memory.",
+        "alternatives": [
+          "Generic parser acceptance can precede model-specific rejection.",
+          "Changing an attention backend also changes kernel/layout behavior; topology is not the only intervention."
+        ],
+        "check": "Read the exact validator and resolved model/backend/role/graph settings. Distinguish startup selection receipts from executed-forward telemetry.",
+        "action": "Choose a supported configuration and validate target/draft layout plus functional transfer before a PD performance trial. Do not suppress the assertion. Preserve every serving GPU in the denominator.",
+        "expected": "A compatible configuration passes startup validation; correctness and throughput remain separate tests.",
+        "reject_if": "Model validation, target/draft KV agreement, transfer correctness or canonical replay fails.",
+        "status": "Source audit only; current TRT-LLM aggregated recipe is unchanged. No PD trial selected.",
+        "runtime_evidence": [
+          "R6/R8b/R9 show a prefill/decode scheduling tradeoff, making topology a candidate to investigate if aggregate tuning plateaus. Local source explicitly rejects TRT-LLM PD; this prevents a one-flag conversion or an isolated topology claim. No PD result exists."
+        ]
+      },
+      {
+        "id": "dsv41-mega-mhc-candidate",
+        "graph_nodes": [
+          "config.SGLANG_OPT_DSV41_MEGA_MHC_PREFILL",
+          "mechanism.dsv41_mega_mhc_dispatch",
+          "config.enable_profile_cuda_graph",
+          "config.SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE",
+          "mechanism.capture_kernel_profile",
+          "log.cuda_graph_capture_trace_saved"
+        ],
+        "observation": "The launch flag is disabled, or enabled without any distinct serving branch receipt.",
+        "diagnosis": "Fusion is a candidate mechanism, but launch settings alone do not establish eligibility, execution incidence, correctness or benefit.",
+        "alternatives": [
+          "Collective planning or a missing/incompatible next boundary prevents dispatch.",
+          "The pinned library lacks the required API or fails numeric/capture checks.",
+          "Fusion is reached but does not dominate the measured workload; optional quantization or decode paths change the tradeoff.",
+          "A synthetic probe that switches GPUs after initializing context-local library state may fail even when the serving process topology works; reproduce the actual process/device ownership before changing model code."
+        ],
+        "check": "Trace the reached branch, mode and shape. Validate checkpoint-weight shifted ordering, BF16 rounding, next statistics, optional MXFP8 output and per-stream warmup/capture on the pinned GPU library. Keep synthetic correctness separate from actual model quality and serving selection. Existing --enable-profile-cuda-graph plus SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE can export actual startup kernel traces; verify their contents and runner/rank/timing coverage instead of treating an export log as kernel evidence.",
+        "action": "Use a bounded idle compatibility probe before selecting a full R6-based performance candidate. Prefer existing startup capture traces to establish actual kernel selection where covered; add bounded branch evidence for remaining ambiguous paths. Keep capture/warmup activity separate from measured replay incidence and confirm any promising result without startup profiling.",
+        "expected": "A compatible kernel passes numerical and capture checks; actual selection receipts and full replay then test whether useful service and canonical throughput improve.",
+        "reject_if": "Numeric/API/capture checks fail, actual serving selection cannot be established, or the full candidate regresses the intended throughput/latency objective.",
+        "status": "Idle compatibility passed15cases across4fresh GPU-isolated workers. Full R12 launched on job3443246 with R6performance settings, Mega mHC enabled and declared startup tracing; serving evidence and final result pending.",
+        "runtime_evidence": [
+          "Job3443116 submitted on GB200 using frozen executable5e70162. Probe covers synthetic layer0 attention-to-FFN weights, fifteen shape/device/quantization cases; it does not cover every seam or real activation distribution.",
+          "Source audit found existing combined capture profiling/export gated by both the server profiling flag and trace environment flag. Prospective R12 draft declares these supporting settings and all observer changes; no GPU result or full-run selection yet.",
+          "Job3443116 onGB200 passed41actualARM contracts, all11057sourceblobs/130clientversions/mount identities and9GPU0numerical/capture/changed-input cases, including3optionalMXFP8cases. Maximum normalized abs error0.00390625 and quantized relativeRMS0.0266704 remained within predeclared tolerances. FirstGPU1eagercall after same-process device switching failedCUDA_ERROR_INVALID_HANDLE inDeepGEMMlaunch. This is not a numerical disagreement or proof of production failure: serving uses oneGPUperprocess. Probe revised to4fresh single-visible-GPUworkers, unchangedmath/tolerances;4CPUprocess-lifecycle contracts pass; retry3443246pending. All-rank compatibility, actual serving selection and performance remain unproven.",
+          "Retry3443246 onlyris0107 passed all15cases (GPU0nine, GPUs1-3twoeach) using4fresh single-visible-GPUworkers, unchangedmath/tolerances. ActualARM41contracts,11057sourceblobs,130clientversions, mount, candidateCLI and idle resource clearance passed. Maxnormalizedabs0.00390625 and quantizedrelativeRMS0.0266704. Node changed as well as process isolation, so the earlier invalid-handle root cause is not proven. Selected and atomically handed off mega-mhc-hour-r12 at20:54UTC: R6C384/cap96/cadence18/SPF/budget20480/capture64, MegaMHCflag1, source5e70162 and startup capture profiling/export. No throughput result, model-quality guarantee, steady-state incidence or isolated observer-overhead claim."
+        ]
+      }
+    ],
+    "policy": {
+      "units": "Keep rank/process labels; encounter counts are not unique requests, wait seconds or fallback percentages.",
+      "window": "First characterize the full canonical AgentX hour. Read changing workload/cache regimes with graph evidence throughout; consistent early windows do not establish the whole replay.",
+      "early_stop": "Full baseline/candidate runs continue through the requested measurement unless safety or invalidity requires stopping. Shorter diagnostic sections need an explicit, previously calibrated question.",
+      "promotion": "Use complete canonical runs, validity/accounting and refreshed latency/throughput frontiers for candidate ranking. Calibrate shorter sections against full-run outcomes later; retain missed regimes and counterexamples.",
+      "unknown": "Missing producers/events are unknown, not zero; add discriminating instrumentation when alternatives remain.",
+      "finalization": "Traffic completion, zero request errors and latency coverage do not by themselves establish a qualified result. Require complete canonical exports, validation and final accounting. Preserve artifacts durably from launch; distinguish external resource-guard termination from serving OOM."
+    }
+  }
+}

@@ -91,9 +91,7 @@ def _decode_queue(sched):
         pending_reqs=[],
         _check_if_req_exceed_kv_capacity=MagicMock(return_value=False),
         _create_receiver_and_enqueue=MagicMock(
-            side_effect=lambda req, **kw: SimpleNamespace(
-                req=req, kv_receiver=MagicMock(), **kw
-            )
+            return_value=SimpleNamespace(req=None, kv_receiver=MagicMock())
         ),
         _resolve_prefill_dp_rank=MagicMock(return_value=0),
     )
@@ -107,6 +105,10 @@ def _admit_prefill(q, req):
 
 
 def _admit_decode(q, req, **kw):
+    q._create_receiver_and_enqueue.return_value.req = req
+    q._create_receiver_and_enqueue.return_value.is_rebootstrap = kw.get(
+        "is_rebootstrap", False
+    )
     with patch(
         "sglang.srt.disaggregation.decode._is_fake_transfer", return_value=False
     ):

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "base_commit": "f91b81b82ac7701b16fff92f9e2a24e840475b37",
-  "scope": "Prioritized causal audit, not every SGLang option. Full declarative field inventory records unaudited remainder.",
+  "scope": "Source-backed mechanism and observation-contract map, not a proven causal-performance predictor. Experiment predictions/outcomes and operational state are separate campaign records.",
   "nodes": [
     {
       "id": "mechanism.prefill_tokens",
@@ -424,7 +424,7 @@
       ],
       "hypothesis": "Extra slots help only if rows bind; they do not create KV capacity. Lower headroom may trade concurrency for retraction risk.",
       "next_test": "First separate handshake, slot and KV gates. If KV binds compare required/budget values and per-pool capacity; change one limit.",
-      "remaining_gap": "KV failure can be joint physical capacity even if scalar FULL/SWA budgets look sufficient. Host allocation success and retransfers are not fully instrumented.",
+      "remaining_gap": "Bounded lifecycle acquisitions/releases and pool accounting expose last observed holders, including exceptional/unattributed rows. Physical shared KV allocation failure and wire progress remain unresolved; host branches require path-specific tests.",
       "evidence": "code-audited; causal performance effect requires paired experiment"
     },
     {
@@ -597,7 +597,7 @@
       ],
       "hypothesis": "Deferring reservations may free D for ready requests under long prefills, but adds handoff latency when capacity is plentiful.",
       "next_test": "Use matched long/short prompt distributions at low and high concurrency. Compare active D, prealloc usage, handoff latency, retries and TTFT.",
-      "remaining_gap": "Bootstrapping status combines discovery and readiness; do not label all handshake_pending as waiting for prefill completion. Existing latency histograms are completion-biased.",
+      "remaining_gap": "Bootstrapping still combines peer discovery/readiness. PD lifecycle hooks distinguish observed local transport, metadata gate and consensus, with bounded-loss indicators; no wire-byte progress or cross-host critical-path timing. Completed histograms censor stalled requests.",
       "evidence": "code-audited; causal performance effect requires paired experiment"
     },
     {
@@ -2536,7 +2536,7 @@
       ],
       "hypothesis": "Full canonical replay establishes workload and cache regimes; later calibrated live sections may reject hypotheses earlier, but cannot replace qualified full-run scoring.",
       "next_test": "Collect 10-second decision windows and 5-second scrapes; align steady-state windows, test telemetry overhead on/off, and preserve original benchmark validation.",
-      "remaining_gap": "Decision logs are event-driven and synchronous on flush; no independent heartbeat, no proof an absent event means the system is healthy.",
+      "remaining_gap": "Low-cardinality tuning flush remains event driven. Opt-in PD lifecycle heartbeat supplies separate queue/ownership freshness during no-forward phases; native activation and consumer completeness need tested receipts. Silence never establishes health.",
       "evidence": "Full GB200 baseline characterized all3600s pluscanonicalwarmup/drain. Early workloadburst and laterlogicalhost-retention capacity demonstrate different regimes; prefix repeatability does not validate full-run ranking shortcuts."
     },
     {
@@ -3399,7 +3399,7 @@
       ],
       "hypothesis": "If startup rejects a combination before weights/traffic, it is a compatibility constraint rather than a measured scheduler/resource bottleneck.",
       "next_test": "Before a prospective PD trial, construct a supported role/backend configuration and validate target/draft KV agreement and transfer correctness on the pinned image; retain whole-system GPU denominator.",
-      "remaining_gap": "No PD launch or performance validation in this campaign; current R10 remains aggregated. Kernel dispatch/critical-path cost cannot be inferred from backend selection alone.",
+      "remaining_gap": "Backend compatibility is revision/topology/path specific. Campaign native PD outcomes now exist; consult canonical outcome references, not this source map, for current validation. Kernel dispatch cost cannot be inferred from selected backend.",
       "evidence": [
         {
           "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
@@ -3612,6 +3612,101 @@
         "anchor": "CUDA graph capture trace saved to:"
       },
       "semantics": "Combined trace export completed for the named runner and TP rank under SGLANG_TORCH_PROFILER_DIR/graph_capture_profile. This receipt does not itself prove a particular kernel ran or quantify its measured-workload incidence."
+    },
+    {
+      "id": "mechanism.pd_ownership",
+      "kind": "mechanism",
+      "title": "PD lifecycle and retained resource ownership",
+      "source": {
+        "path": "python/sglang/srt/observability/pd_lifecycle.py",
+        "anchor": "class PDLifecycleRecorder:"
+      },
+      "behavior": "Existing request timestamp, allocator, transport result and cleanup hooks update a bounded process-local ledger. Actual pool frees end ownership; cancellation and completion do not imply release. Metadata slot0 is usable; request row0 is reserved. Session retention is explicit.",
+      "conditions": [
+        "Opt-in interval>0 in prefill/decode scheduler processes; normal/overlap PP1/CP1 campaign path is the validation target.",
+        "Periodic snapshots run from process_input_requests, including waiting-only phases."
+      ],
+      "confounders": [
+        "Sampling, bounded state/event/sink capacity and truncated history can lose transitions. Pool resets and exceptional/unbound ownership are explicit.",
+        "Transport success, metadata visibility and rank consensus differ. Submitted sends are not wire-start or byte-progress measurements.",
+        "Retries/rebootstrap/host receive/chunks branch; process-local monotonic ages cannot be subtracted across hosts."
+      ],
+      "hypothesis": "Old stalled or cancelled holders can explain capacity pressure that aggregate guard visits cannot resolve; young progressing holders support a capacity hypothesis instead.",
+      "next_test": "Reconstruct native healthy and deliberately stalled/cancelled requests from consumer records with unchanged forward count; inspect actual release/reuse and loss. If holders progress, consider bounded capacity tradeoff; if held after cancellation or stalled progress, repair lifecycle/cleanup first.",
+      "remaining_gap": "Native serving activation and overhead require version-specific qualification receipts. Physical shared KV ownership, wire-byte progress, PP/CP/PDMux and concurrent writers are not established. Never infer a leak from an omitted release under incomplete history.",
+      "evidence": "Source-backed contract plus actual allocator/cleanup regression tests; native campaign qualification is maintained externally, not asserted by graph completeness."
+    },
+    {
+      "id": "log.pd_lifecycle",
+      "kind": "log_line",
+      "name": "pd_lifecycle",
+      "source": {
+        "path": "python/sglang/srt/observability/pd_lifecycle.py",
+        "anchor": "logger.info(\"pd_lifecycle %s\""
+      },
+      "observation_contract": {
+        "identity": "RID and exact decimal-string room, role/worker/rank, host/pid/incarnation and process-local sequence",
+        "activation": "SGLANG_PD_LIFECYCLE_INTERVAL>0; scheduler heartbeat even without forwards",
+        "freshness": "snapshot_monotonic and scheduler_run_batch_count; silence unknown; emitted_unix does not align remote clocks",
+        "bounds": "max_requests/max_events,4 sink batches,oldest8,history12,pools16; sampling and cumulative loss explicit",
+        "ownership": "request_slot/metadata acquisition sequence, actual release, session-retained rows, unattributed occupied counts",
+        "decision": "Young advancing owners: capacity/service experiment. Old or cancelled retained owners: progress/cleanup diagnostic. Missing/stale history: repair diagnostic before full trial."
+      }
+    },
+    {
+      "id": "metric.pd_queue_snapshot_timestamp_seconds",
+      "kind": "metric",
+      "name": "sglang:pd_queue_snapshot_timestamp_seconds",
+      "source": {
+        "path": "python/sglang/srt/observability/metrics_collector.py",
+        "anchor": "def log_pd_queue_snapshot"
+      },
+      "observation_contract": {
+        "activation": "Scheduler process_input_requests independent of forward/fully-idle metrics; metrics enabled",
+        "freshness": "Wall timestamp covers only P bootstrap/inflight and D preallocation/transfer/deferred totals; priority/host subqueues and derived rates excluded.",
+        "semantics": "Gauge, per process/rank; process restart resets freshness; no RID labels.",
+        "decision": "Fresh nonempty queues: inspect ownership. Stale zero: unknown, repair activation; fresh empty with progress: inspect supply."
+      }
+    },
+    {
+      "id": "config.SGLANG_PD_LIFECYCLE_INTERVAL",
+      "kind": "environment",
+      "name": "SGLANG_PD_LIFECYCLE_INTERVAL",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_PD_LIFECYCLE_INTERVAL ="
+      },
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.SGLANG_PD_LIFECYCLE_MAX_REQUESTS",
+      "kind": "environment",
+      "name": "SGLANG_PD_LIFECYCLE_MAX_REQUESTS",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_PD_LIFECYCLE_MAX_REQUESTS ="
+      },
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.SGLANG_PD_LIFECYCLE_MAX_EVENTS",
+      "kind": "environment",
+      "name": "SGLANG_PD_LIFECYCLE_MAX_EVENTS",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_PD_LIFECYCLE_MAX_EVENTS ="
+      },
+      "review_status": "causal_mapping"
+    },
+    {
+      "id": "config.SGLANG_PD_LIFECYCLE_SAMPLE_EVERY",
+      "kind": "environment",
+      "name": "SGLANG_PD_LIFECYCLE_SAMPLE_EVERY",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_PD_LIFECYCLE_SAMPLE_EVERY ="
+      },
+      "review_status": "causal_mapping"
     }
   ],
   "edges": [
@@ -5311,6 +5406,56 @@
       "source": "mechanism.dsv41_mega_mhc_dispatch",
       "target": "mechanism.capture_kernel_profile",
       "relation": "interacts_with"
+    },
+    {
+      "source": "mechanism.pd_ownership",
+      "target": "log.pd_lifecycle",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "log.pd_lifecycle",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "log.pd_lifecycle",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "log.pd_lifecycle",
+      "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "metric.pd_queue_snapshot_timestamp_seconds",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "log.pd_lifecycle",
+      "relation": "indirectly_observed_by"
+    },
+    {
+      "source": "config.SGLANG_PD_LIFECYCLE_INTERVAL",
+      "target": "mechanism.pd_ownership",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_PD_LIFECYCLE_MAX_REQUESTS",
+      "target": "mechanism.pd_ownership",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_PD_LIFECYCLE_MAX_EVENTS",
+      "target": "mechanism.pd_ownership",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "config.SGLANG_PD_LIFECYCLE_SAMPLE_EVERY",
+      "target": "mechanism.pd_ownership",
+      "relation": "controls_or_constrains"
     }
   ]
 }

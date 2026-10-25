@@ -108,7 +108,7 @@ Scheduler process CPU can exceed one CPU-second per wall-second because it inclu
 These are explicit gaps, not completed features:
 
 1. **External MoE variant provenance:** record the library-resolved kernel variant per capture/replay key and a bounded workload-shape summary. Inspect FlashInfer/DeepGEMM APIs first. SGLang wrapper choice or a Python kernel-call counter cannot prove Generic versus GenPhase during CUDA graph replay. Use actual kernel profiles until this exists.
-2. **PD stage age / exposed waits:** add per-stage oldest age and transition residence histograms using existing lifecycle timestamps, covering cancel, retry, recompute and host receive. Separate discovery, readiness, capacity, wire completion and delayed polling. Do not add a per-request metric label or scan all queues every hot-loop iteration.
+2. **PD lifecycle/ownership:** bounded stage ages, resource acquisition/release, existing readiness results and phase-independent queue snapshots are implemented; see `pd_lifecycle_contracts.json`. Native activation/consumer/overhead qualification belongs to campaign receipts. Exposed waits, wire-byte progress and physical/shared KV bytes remain gaps. No per-request metric labels or unbounded hot-loop queue scans.
 3. **CPU/cache overlap:** attach existing completion events to transfers and bounded replay-tail submissions; accumulate CPU/device/exposed time without synchronization. First validate existing timer event ownership and overlap semantics.
 4. **Host capacity and placement receipt:** record actual affinity, huge-page backing and per-worker Engram/cache budgets at initialization. Host DRAM is shared beyond one scheduler; do not sum duplicated/shared allocations as independent bytes.
 5. **Router and kernel imbalance:** connect the deployed router's decision telemetry and a bounded per-layer worst-rank MoE/rebalance summary. These belong to their respective owners; a generic scheduler queue length cannot substitute.
@@ -198,3 +198,9 @@ Five CPU contracts execute unmodified production initialization/increment method
 
 
 Full R11 is now qualified and archived on frozen b6df8ee:1383policy residual samples and1432successful native snapshots acrossfourranks, zero request errors and100%TTFT/ITLcoverage. Total341,312.95590TPS/GPU recovers25.06%overR10 but falls5.99%belowbestR6. Graph-service recovery is not a throughput win. Later graph-counter baseline and returned-site changes are development-only; require41actualARM contracts and serving producer checks before deploying them. Isolated instrumentation overhead remains open.
+
+## Source contracts and experiment feedback
+
+`explanation_model.json` contains conditional source-backed rules. It is not a current experiment dashboard or a causal performance predictor. Its old evolving narratives are preserved explicitly as `explanation_history_r12.json`; their pending/live statements are historical. Rule outcome references point to canonical campaign records. The campaign owns immutable plans, prediction outcomes, applicability and `decisions/current.json` separately.
+
+`pd_lifecycle_contracts.json` names a branching action for each new instrument, producer anchor, actual transition tests, phase coverage and limitations. Run `tools.py --check` for source structure; the campaign's executable feedback checker additionally requires native activation receipts, current outcome hashes and consistent generated summaries. Source completeness cannot satisfy native activation or prove that an instrument improved throughput.

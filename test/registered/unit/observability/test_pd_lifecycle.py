@@ -133,6 +133,46 @@ class TestPDLedger(unittest.TestCase):
         self.rec.release(pool, 1)
         self.assertFalse(self.rec.owners)
 
+    def test_actual_heartbeat_activates_without_forward_or_idle_metrics(self):
+        pool = Pool()
+        metadata = Pool()
+        metadata.free_slots = [0]
+        snapshots = []
+        scheduler = SimpleNamespace(
+            disaggregation_mode="decode",
+            forward_ct=0,
+            waiting_queue=[],
+            metrics_reporter=SimpleNamespace(current_scheduler_metrics_enabled=True),
+            metrics_collector=SimpleNamespace(log_pd_queue_snapshot=snapshots.append),
+            disagg_decode_prealloc_queue=SimpleNamespace(
+                queue=[object()],
+                retracted_queue=[],
+                held_rebootstrap_reqs=[],
+                req_to_token_pool=pool,
+                req_to_metadata_buffer_idx_allocator=metadata,
+            ),
+            disagg_decode_transfer_queue=SimpleNamespace(
+                queue=[], num_pending_deferred_releases=lambda: 0
+            ),
+        )
+        previous = module.recorder
+        module.recorder = self.rec
+        try:
+            req = Request("heartbeat", 8)
+            self.rec.bind(req)
+            self.rec.transition(req, "handshake_wait")
+            module.scheduler_heartbeat(scheduler, self.now)
+            self.now += 5
+            module.scheduler_heartbeat(scheduler, self.now)
+            self.assertEqual(len(snapshots), 2)
+            self.assertEqual(self.records[-1]["scheduler_run_batch_count"], 0)
+            self.assertEqual(self.records[-1]["queues"]["preallocation"], 1)
+            self.assertGreaterEqual(
+                self.records[-1]["oldest_waiters"][0]["stage_age_seconds"], 5
+            )
+        finally:
+            module.recorder = previous
+
     def test_unbounded_or_non_scalar_facts_are_rejected_and_close_is_idempotent(self):
         req = Request("bounded", 5)
         self.rec.bind(req)
