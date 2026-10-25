@@ -133,6 +133,19 @@ class TestPDLedger(unittest.TestCase):
         self.rec.release(pool, 1)
         self.assertFalse(self.rec.owners)
 
+    def test_unbounded_or_non_scalar_facts_are_rejected_and_close_is_idempotent(self):
+        req = Request("bounded", 5)
+        self.rec.bind(req)
+        self.rec.observe(req, bad=float("nan"))
+        self.rec.observe(req, bad="x" * 129)
+        self.rec.observe(req, bad=[1])
+        self.assertEqual(self.rec.loss["unsupported_value"], 3)
+        self.rec.close()
+        count = len(self.records)
+        self.rec.close()
+        self.assertEqual(len(self.records), count)
+        self.assertFalse(self.rec.enabled)
+
     def test_disabled_and_overflow_are_explicit(self):
         disabled = module.PDLifecycleRecorder(emit=self.records.append)
         disabled.bind(Request("private", 9))

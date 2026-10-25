@@ -173,6 +173,17 @@ class PDLifecycleRecorder:
             else:
                 self.loss["event_records_dropped"] += 1
 
+    @staticmethod
+    def _valid_facts(facts):
+        return len(facts) <= 32 and all(
+            isinstance(k, str)
+            and len(k) <= 64
+            and type(v) in (str, int, float, bool, type(None))
+            and (not isinstance(v, str) or len(v) <= 128)
+            and (not isinstance(v, float) or math.isfinite(v))
+            for k, v in facts.items()
+        )
+
     def transition(self, req, stage, **facts):
         if not self.enabled:
             return
@@ -180,8 +191,9 @@ class PDLifecycleRecorder:
         if entry is None:
             return
         # Call sites supply a closed vocabulary and CPU scalar facts only.
-        if any(
-            type(v) not in (str, int, float, bool, type(None)) for v in facts.values()
+        if (
+            not self._valid_facts(facts)
+            or len(entry["facts"].keys() | facts.keys()) > 32
         ):
             self.loss["unsupported_value"] += 1
             return
@@ -201,12 +213,15 @@ class PDLifecycleRecorder:
         if not self.enabled:
             return
         key, entry = self._entry(req)
-        if entry is None or all(entry["facts"].get(k) == v for k, v in facts.items()):
+        if entry is None:
             return
-        if any(
-            type(v) not in (str, int, float, bool, type(None)) for v in facts.values()
+        if (
+            not self._valid_facts(facts)
+            or len(entry["facts"].keys() | facts.keys()) > 32
         ):
             self.loss["unsupported_value"] += 1
+            return
+        if all(entry["facts"].get(k) == v for k, v in facts.items()):
             return
         # Budget values can change every scan. Retain the latest CPU scalars,
         # but only a change of the blocking gate is a transition record.
@@ -450,10 +465,13 @@ class PDLifecycleRecorder:
             self.summary(
                 {}, force=True, unsupported=("shutdown_queue_counts_unavailable",)
             )
+        self.enabled = False
         if self._thread is not None:
             try:
                 self._sink.put(None, timeout=1)
                 self._thread.join(timeout=1)
+                if self._thread.is_alive():
+                    self.loss["shutdown_incomplete"] += 1
             except queue.Full:
                 self.loss["shutdown_incomplete"] += 1
 
@@ -539,5 +557,7 @@ def scheduler_heartbeat(scheduler, now):
             unsupported=(
                 "physical_KV_bytes_and_shared_prefix_ownership",
                 "wire_byte_progress_unobserved",
+                "PP_CP_PD_multiplex_and_concurrent_writer_paths_not_qualified",
+                "shutdown_or_permanent_sink_failure_can_prevent_final_loss_report",
             ),
         )

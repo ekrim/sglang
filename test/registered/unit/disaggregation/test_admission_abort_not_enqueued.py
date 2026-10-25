@@ -91,7 +91,9 @@ def _decode_queue(sched):
         pending_reqs=[],
         _check_if_req_exceed_kv_capacity=MagicMock(return_value=False),
         _create_receiver_and_enqueue=MagicMock(
-            return_value=SimpleNamespace(kv_receiver=MagicMock())
+            side_effect=lambda req, **kw: SimpleNamespace(
+                req=req, kv_receiver=MagicMock(), **kw
+            )
         ),
         _resolve_prefill_dp_rank=MagicMock(return_value=0),
     )
