@@ -418,7 +418,9 @@ class PrefillBootstrapQueue:
 
         if self.req_to_metadata_buffer_idx_allocator.available_size() == 0:
             return False
-        req.metadata_buffer_index = self.req_to_metadata_buffer_idx_allocator.alloc(req)
+        req.metadata_buffer_index = self.req_to_metadata_buffer_idx_allocator.alloc()
+        if req.metadata_buffer_index is not None:
+            pd_lifecycle.acquire(self.req_to_metadata_buffer_idx_allocator, req.metadata_buffer_index, req, "metadata")
         assert req.metadata_buffer_index is not None
         return True
 

@@ -5674,6 +5674,7 @@ class Scheduler(
                 DisaggregationMode.DECODE,
             ):
                 release_kv_cache(req, self.tree_cache, checkpoint=False)
+            pd_lifecycle.transition(req, "aborted", origin="waiting_queue_cancel")
             logger.debug(f"Abort queued request. {req.rid=}")
 
         if self.dllm_config is not None:
@@ -5752,6 +5753,7 @@ class Scheduler(
                         self.ipc_channels.send_to_tokenizer.send_output(
                             _make_abort_req(decode_req), decode_req
                         )
+                        pd_lifecycle.transition(decode_req, "aborted", origin="retracted_queue_cancel")
                     else:
                         remaining_retracted.append(decode_req)
                 self.disagg_decode_prealloc_queue.retracted_queue = remaining_retracted

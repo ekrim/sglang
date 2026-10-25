@@ -233,7 +233,11 @@ class PDLifecycleRecorder:
         if len(self.pools) >= 16 and previous is None:
             self.loss["unsupported_pools"] += 1
             return False
-        self.pools[pool_id] = (weakref.ref(pool), kind)
+        try:
+            self.pools[pool_id] = (weakref.ref(pool), kind)
+        except TypeError:
+            self.loss["unsupported_pools"] += 1
+            return False
         return True
 
     def acquire(self, pool, slot, req, kind):
@@ -455,6 +459,7 @@ class PDLifecycleRecorder:
 
 
 recorder = PDLifecycleRecorder()
+atexit.register(recorder.close)
 
 
 def from_stats(stats, stage):
@@ -471,6 +476,8 @@ def configure(**context):
     interval = envs.SGLANG_PD_LIFECYCLE_INTERVAL.get()
     if context.get("role") not in {"prefill", "decode"}:
         interval = 0.0
+    if recorder.enabled:
+        recorder.close()
     recorder.__init__(
         interval,
         context=context,
@@ -478,8 +485,6 @@ def configure(**context):
         max_events=envs.SGLANG_PD_LIFECYCLE_MAX_EVENTS.get(),
         sample_every=envs.SGLANG_PD_LIFECYCLE_SAMPLE_EVERY.get(),
     )
-    if recorder.enabled:
-        atexit.register(recorder.close)
 
 
 def scheduler_heartbeat(scheduler, now):

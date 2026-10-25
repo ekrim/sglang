@@ -1852,9 +1852,10 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
         self, decode_req, kv_indices, page_size, state_indices=None, **metadata_kwargs
     ) -> None:
         decode_req.metadata_buffer_index = (
-            self.req_to_metadata_buffer_idx_allocator.alloc(decode_req.req)
+            self.req_to_metadata_buffer_idx_allocator.alloc()
         )
         assert decode_req.metadata_buffer_index is not None
+        pd_lifecycle.acquire(self.req_to_metadata_buffer_idx_allocator, decode_req.metadata_buffer_index, decode_req.req, "metadata")
         page_indices = self._transfer_page_indices(decode_req, kv_indices, page_size)
         if (
             metadata_kwargs.get("destination") != KVTransferDestination.HOST
