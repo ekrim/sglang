@@ -8,21 +8,188 @@ immutable snapshots. This is an opt-in state diagnostic, not a span exporter.
 from __future__ import annotations
 
 import atexit
+import base64
 import hashlib
 import heapq
 import json
-import logging
 import math
 import os
 import queue
 import socket
+import sys
 import threading
 import time
 import uuid
 import weakref
 from collections import Counter, OrderedDict, deque
 
-logger = logging.getLogger(__name__)
+WIRE_PREFIX = "pd_lifecycle_frame "
+MAX_WIRE_RECORD_BYTES = 8 * 1024 * 1024
+
+
+def write_atomic_record(record, number, fd):
+    """One bounded os.write per frame; concurrent stderr writers cannot split it.
+
+    This runs only on the bounded sink thread. A record remains the existing
+    schema2 snapshot; framing changes delivery, not request lifecycle semantics.
+    """
+    pipe_buf = os.fpathconf(fd, "PC_PIPE_BUF")
+    if pipe_buf < 512:
+        raise OSError("PD lifecycle output does not support bounded atomic frames")
+    chunk_bytes = min(2048, ((pipe_buf - 384) // 4) * 3)
+    payload = dict(
+        record, delivery={"transport": "atomic_frames_v1", "record_number": number}
+    )
+    raw = json.dumps(payload, separators=(",", ":")).encode("ascii")
+    if len(raw) > MAX_WIRE_RECORD_BYTES:
+        raise ValueError("PD lifecycle record exceeds bounded wire size")
+    checksum = hashlib.sha256(raw).hexdigest()
+    parts = (len(raw) + chunk_bytes - 1) // chunk_bytes
+    for index in range(parts):
+        frame = dict(
+            v=1,
+            i=record["context"]["incarnation"],
+            n=number,
+            k=index,
+            m=parts,
+            z=len(raw),
+            h=checksum,
+            p=base64.b64encode(
+                raw[index * chunk_bytes : (index + 1) * chunk_bytes]
+            ).decode("ascii"),
+        )
+        data = (WIRE_PREFIX + json.dumps(frame, separators=(",", ":")) + "\n").encode(
+            "ascii"
+        )
+        if len(data) > pipe_buf or os.write(fd, data) != len(data):
+            raise OSError("PD lifecycle atomic frame write incomplete")
+
+
+class PDFrameReader:
+    """Bounded offline/live assembler with explicit transport gaps.
+
+    Feed complete captured lines, including ordinary mixed stderr. Atomic
+    frames can begin after another writer's partial line; their marker is the
+    boundary. Call finish only on a closed file/prefix, not on each live poll.
+    """
+
+    def __init__(self, max_pending_bytes=64 * 1024 * 1024, max_processes=128):
+        self.max_pending_bytes = max_pending_bytes
+        self.max_processes = max_processes
+        self.pending = {}
+        self.last_number = {}
+        self.pending_bytes = 0
+        self.gaps = []
+        self.gaps_omitted = 0
+
+    def _gap(self, reason, origin=None, incarnation=None):
+        if len(self.gaps) < 128:
+            self.gaps.append(
+                dict(reason=reason, source=origin, incarnation=incarnation)
+            )
+        else:
+            self.gaps_omitted += 1
+
+    def _discard(self, incarnation):
+        old = self.pending.pop(incarnation, None)
+        if old is not None:
+            self.pending_bytes -= len(old["data"])
+
+    def feed(self, line, origin=None):
+        if WIRE_PREFIX not in line:
+            return None
+        try:
+            encoded = line.split(WIRE_PREFIX, 1)[1]
+            if len(encoded) > 4096:
+                raise ValueError("Oversized frame")
+            frame = json.loads(encoded)
+            inc, number, index, parts, size = (
+                frame[k] for k in ("i", "n", "k", "m", "z")
+            )
+            assert frame["v"] == 1 and isinstance(inc, str) and len(inc) == 32
+            assert all(type(x) is int for x in (number, index, parts, size))
+            assert number > 0 and 0 <= index < parts <= MAX_WIRE_RECORD_BYTES
+            assert 0 < size <= MAX_WIRE_RECORD_BYTES and parts <= size
+            assert isinstance(frame["h"], str) and len(frame["h"]) == 64
+            chunk = base64.b64decode(frame["p"], validate=True)
+            assert 0 < len(chunk) <= 2048
+        except (ValueError, TypeError, KeyError, AssertionError):
+            self._gap("invalid_atomic_frame", origin)
+            return None
+        state = self.pending.get(inc)
+        if index == 0:
+            if state is not None:
+                self._gap("incomplete_record_before_next_start", origin, inc)
+                self._discard(inc)
+            if (
+                inc not in self.last_number
+                and len(self.last_number) >= self.max_processes
+            ):
+                self._gap("reader_process_bound_exceeded", origin, inc)
+                return None
+            previous = self.last_number.get(inc, 0)
+            if number != previous + 1:
+                self._gap("record_sequence_gap_or_reset", origin, inc)
+            self.last_number[inc] = number
+            state = dict(
+                number=number,
+                next=0,
+                parts=parts,
+                size=size,
+                checksum=frame["h"],
+                data=bytearray(),
+                source=origin,
+            )
+            self.pending[inc] = state
+        if state is None or (number, index, parts, size, frame["h"]) != (
+            state["number"],
+            state["next"],
+            state["parts"],
+            state["size"],
+            state["checksum"],
+        ):
+            self._gap("missing_or_conflicting_record_fragment", origin, inc)
+            self._discard(inc)
+            return None
+        if (
+            self.pending_bytes + len(chunk) > self.max_pending_bytes
+            or len(state["data"]) + len(chunk) > size
+        ):
+            self._gap("reader_byte_bound_exceeded", origin, inc)
+            self._discard(inc)
+            return None
+        state["data"].extend(chunk)
+        self.pending_bytes += len(chunk)
+        state["next"] += 1
+        if state["next"] != parts:
+            return None
+        raw = bytes(state["data"])
+        self._discard(inc)
+        try:
+            assert (
+                len(raw) == size
+                and hashlib.sha256(raw).hexdigest() == state["checksum"]
+            )
+            record = json.loads(raw)
+            assert record["context"]["incarnation"] == inc
+            assert record["delivery"] == {
+                "transport": "atomic_frames_v1",
+                "record_number": number,
+            }
+        except (ValueError, KeyError, TypeError, AssertionError):
+            self._gap("record_integrity_failure", origin, inc)
+            return None
+        return record, dict(first_frame=state["source"], last_frame=origin)
+
+    def finish(self):
+        for inc, state in list(self.pending.items()):
+            self._gap("incomplete_record_at_capture_boundary", state["source"], inc)
+            self._discard(inc)
+        return dict(
+            gaps=self.gaps,
+            gaps_omitted=self.gaps_omitted,
+            scope="Capture boundaries and missing frames remain explicit; producer/collector closure and current freshness require external receipts.",
+        )
 
 
 class PDLifecycleRecorder:
@@ -79,14 +246,17 @@ class PDLifecycleRecorder:
             self._thread.start()
 
     def _write(self):
+        number = 0
         while True:
             item = self._sink.get()
             try:
                 if item is None:
                     return
-                logger.info("pd_lifecycle %s", json.dumps(item, separators=(",", ":")))
+                number += 1
+                write_atomic_record(item, number, sys.stderr.fileno())
             except Exception:
                 self.loss["sink_errors"] += 1
+                self.loss["event_records_dropped"] += len(item["events"])
             finally:
                 self._sink.task_done()
 
