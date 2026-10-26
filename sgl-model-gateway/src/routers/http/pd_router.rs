@@ -1009,7 +1009,14 @@ impl PDRouter {
             Err(e) => {
                 error!(
                     decode_url = %decode.url(),
-                    error = %e,
+                    prefill_url = %prefill.url(),
+                    bootstrap_room = ?json_request
+                        .get(Self::BOOTSTRAP_ROOM_KEY)
+                        .and_then(Value::as_u64)
+                        .map(|room| room.to_string()),
+                    connect_error = e.is_connect(),
+                    timeout_error = e.is_timeout(),
+                    error = ?e,
                     "Decode request failed"
                 );
                 // Decode failed at TCP/transport level. No tracked
