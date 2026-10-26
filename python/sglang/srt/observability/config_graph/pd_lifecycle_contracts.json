@@ -114,7 +114,7 @@
         "path": "python/sglang/srt/observability/pd_lifecycle.py",
         "anchor": "def summary"
       },
-      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested. Delivery must pass actual native concurrent-writer capture; flags and empty producer loss counters alone are insufficient.",
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested. Require actual same-pipe stdout/stderr descriptor proof before downstream multiplexing and native concurrent mixed-stream capture to the consumer. Flags, PIPE_BUF atomicity and empty producer loss counters alone are insufficient.",
       "phase_coverage": [
         "waiting_only",
         "active",
@@ -136,7 +136,8 @@
         "Permanent sink failure or process death can prevent final drop report.",
         "PP/CP/PDMux paths require separate qualification. Concurrent-writer support requires external native collector receipt; unit framing success alone is insufficient.",
         "Frame checksums/sequence identify corruption and observed gaps; missing final whole records require process/collector closure receipts.",
-        "8MiB record maximum; fragments are single writes bounded by PIPE_BUF. Sink errors/drop totals can themselves be lost on process death."
+        "8MiB record maximum; fragments are single writes bounded by PIPE_BUF. Sink errors/drop totals can themselves be lost on process death.",
+        "Separate stdout/stderr capture can interleave inside atomic producer frames downstream. Native same-stream tests alone do not establish mixed-stream delivery; qualification belongs to the actual collector path."
       ]
     }
   ]

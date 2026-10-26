@@ -3633,7 +3633,7 @@
       ],
       "hypothesis": "Old stalled or cancelled holders can explain capacity pressure that aggregate guard visits cannot resolve; young progressing holders support a capacity hypothesis instead.",
       "next_test": "Reconstruct native healthy and deliberately stalled/cancelled requests from consumer records with unchanged forward count; inspect actual release/reuse and loss. If holders progress, consider bounded capacity tradeoff; if held after cancellation or stalled progress, repair lifecycle/cleanup first.",
-      "remaining_gap": "Native serving activation and overhead require version-specific qualification receipts. Physical shared KV ownership, wire-byte progress, PP/CP/PDMux and concurrent writers are not established. Never infer a leak from an omitted release under incomplete history.",
+      "remaining_gap": "Native serving activation, capture transport and overhead require version-specific qualification receipts. Mixed stdout/stderr and concurrent writers require actual collector validation. Physical shared KV ownership, wire-byte progress and PP/CP/PDMux are not established. Never infer a leak from an omitted release under incomplete history.",
       "evidence": "Source-backed contract plus actual allocator/cleanup regression tests; native campaign qualification is maintained externally, not asserted by graph completeness."
     },
     {
@@ -3651,7 +3651,7 @@
         "bounds": "max_requests/max_events,4 sink batches,oldest8,history12,pools16; sampling and cumulative loss explicit;8MiB serialized record ceiling,<=2048-byte raw frame chunks,64MiB/128-incarnation default reader pending bounds and128 detailed gaps",
         "ownership": "request_slot/metadata acquisition sequence, actual release, session-retained rows, unattributed occupied counts",
         "decision": "Young advancing owners: capacity/service experiment. Old or cancelled retained owners: progress/cleanup diagnostic. Missing/stale history: repair diagnostic before full trial.",
-        "delivery": "Atomic bounded stderr frames, SHA256 and per-incarnation record sequence. Consumer reassembles concurrent fragments or reports explicit gaps. Source writes are at most PIPE_BUF; native collector transport requires independent qualification."
+        "delivery": "Atomic bounded stderr frames, SHA256 and per-incarnation record sequence. Require stdout/stderr to share a pipe before downstream multiplexing, actual owned descriptor activation and native concurrent mixed-stream consumer qualification. PIPE_BUF and zero producer loss alone do not establish capture integrity. Report explicit consumer gaps; final completeness requires closure."
       }
     },
     {
@@ -5457,6 +5457,11 @@
       "source": "config.SGLANG_PD_LIFECYCLE_SAMPLE_EVERY",
       "target": "mechanism.pd_ownership",
       "relation": "controls_or_constrains"
+    },
+    {
+      "source": "mechanism.measurement",
+      "target": "log.pd_lifecycle",
+      "relation": "observed_by"
     }
   ]
 }
