@@ -3639,18 +3639,19 @@
     {
       "id": "log.pd_lifecycle",
       "kind": "log_line",
-      "name": "pd_lifecycle",
+      "name": "pd_lifecycle_frame",
       "source": {
         "path": "python/sglang/srt/observability/pd_lifecycle.py",
-        "anchor": "logger.info(\"pd_lifecycle %s\""
+        "anchor": "def write_atomic_record"
       },
       "observation_contract": {
         "identity": "Schema2: RID, exact bounded64-bit decimal-string room, process-local request_generation, role/worker/rank,host/pid/incarnation and sequence. Reused client IDs do not merge request lifetimes.",
         "activation": "SGLANG_PD_LIFECYCLE_INTERVAL>0; scheduler heartbeat even without forwards",
-        "freshness": "snapshot_monotonic and scheduler_run_batch_count; silence unknown; emitted_unix does not align remote clocks",
-        "bounds": "max_requests/max_events,4 sink batches,oldest8,history12,pools16; sampling and cumulative loss explicit",
+        "freshness": "snapshot_monotonic and scheduler_run_batch_count; silence unknown; emitted_unix does not align remote clocks; a valid checksum proves record integrity, not stream completeness or current producer liveness",
+        "bounds": "max_requests/max_events,4 sink batches,oldest8,history12,pools16; sampling and cumulative loss explicit;8MiB serialized record ceiling,<=2048-byte raw frame chunks,64MiB/128-incarnation default reader pending bounds and128 detailed gaps",
         "ownership": "request_slot/metadata acquisition sequence, actual release, session-retained rows, unattributed occupied counts",
-        "decision": "Young advancing owners: capacity/service experiment. Old or cancelled retained owners: progress/cleanup diagnostic. Missing/stale history: repair diagnostic before full trial."
+        "decision": "Young advancing owners: capacity/service experiment. Old or cancelled retained owners: progress/cleanup diagnostic. Missing/stale history: repair diagnostic before full trial.",
+        "delivery": "Atomic bounded stderr frames, SHA256 and per-incarnation record sequence. Consumer reassembles concurrent fragments or reports explicit gaps. Source writes are at most PIPE_BUF; native collector transport requires independent qualification."
       }
     },
     {

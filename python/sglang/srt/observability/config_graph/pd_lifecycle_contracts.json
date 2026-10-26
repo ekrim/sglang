@@ -9,7 +9,7 @@
         "path": "python/sglang/srt/observability/pd_lifecycle.py",
         "anchor": "def scheduler_heartbeat"
       },
-      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested. Delivery must pass actual native concurrent-writer capture; flags and empty producer loss counters alone are insufficient.",
       "phase_coverage": [
         "waiting_only",
         "active",
@@ -35,7 +35,7 @@
         "path": "python/sglang/srt/observability/pd_lifecycle.py",
         "anchor": "def acquire"
       },
-      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested. Delivery must pass actual native concurrent-writer capture; flags and empty producer loss counters alone are insufficient.",
       "phase_coverage": [
         "waiting_only",
         "active",
@@ -62,7 +62,7 @@
         "path": "python/sglang/srt/observability/pd_lifecycle.py",
         "anchor": "def release"
       },
-      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested. Delivery must pass actual native concurrent-writer capture; flags and empty producer loss counters alone are insufficient.",
       "phase_coverage": [
         "waiting_only",
         "active",
@@ -88,7 +88,7 @@
         "path": "python/sglang/srt/disaggregation/utils.py",
         "anchor": "metadata_ready=actual_room != 0"
       },
-      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested. Delivery must pass actual native concurrent-writer capture; flags and empty producer loss counters alone are insufficient.",
       "phase_coverage": [
         "waiting_only",
         "active",
@@ -114,7 +114,7 @@
         "path": "python/sglang/srt/observability/pd_lifecycle.py",
         "anchor": "def summary"
       },
-      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested.",
+      "activation": "Opt-in lifecycle interval>0, sample_every1 and bounded capacity sufficient for retained cohort; native PP1/CP1 P4+D16 normal/overlap path must be tested. Delivery must pass actual native concurrent-writer capture; flags and empty producer loss counters alone are insufficient.",
       "phase_coverage": [
         "waiting_only",
         "active",
@@ -122,7 +122,10 @@
       ],
       "tests": [
         "test/registered/unit/observability/test_pd_lifecycle.py::test_disabled_and_overflow_are_explicit",
-        "test/registered/unit/observability/test_pd_lifecycle.py::test_unbounded_or_non_scalar_facts_are_rejected_and_close_is_idempotent"
+        "test/registered/unit/observability/test_pd_lifecycle.py::test_unbounded_or_non_scalar_facts_are_rejected_and_close_is_idempotent",
+        "test/registered/unit/observability/test_pd_lifecycle_delivery.py::test_concurrent_actual_sink_and_ordinary_output",
+        "test/registered/unit/observability/test_pd_lifecycle_delivery.py::test_fragment_loss_corruption_and_capture_boundary",
+        "test/registered/unit/observability/test_pd_lifecycle_delivery.py::test_reader_bounds_and_sink_failure_accounting"
       ],
       "decision": {
         "if_observation_A": "Fresh correlated cohort without relevant loss: apply conditional rule.",
@@ -131,7 +134,9 @@
       "limits": [
         "Max requests/events/history/oldest/pools and four async sink batches bound memory/output.",
         "Permanent sink failure or process death can prevent final drop report.",
-        "PP/CP/PDMux/concurrent writers are not qualified."
+        "PP/CP/PDMux paths require separate qualification. Concurrent-writer support requires external native collector receipt; unit framing success alone is insufficient.",
+        "Frame checksums/sequence identify corruption and observed gaps; missing final whole records require process/collector closure receipts.",
+        "8MiB record maximum; fragments are single writes bounded by PIPE_BUF. Sink errors/drop totals can themselves be lost on process death."
       ]
     }
   ]
