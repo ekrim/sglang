@@ -863,6 +863,9 @@ impl PDRouter {
                 Arc::clone(&decode),
                 prefill_result,
                 decode_result,
+                json_request
+                    .get(Self::BOOTSTRAP_ROOM_KEY)
+                    .and_then(Value::as_u64),
             )
             .await;
         (response, Some(decode))
@@ -875,6 +878,7 @@ impl PDRouter {
         decode: Arc<dyn Worker>,
         prefill_result: Result<reqwest::Response, reqwest::Error>,
         decode_result: Result<reqwest::Response, reqwest::Error>,
+        bootstrap_room: Option<u64>,
     ) -> Response {
         // Process decode response
         match decode_result {
@@ -1010,10 +1014,12 @@ impl PDRouter {
                 error!(
                     decode_url = %decode.url(),
                     prefill_url = %prefill.url(),
-                    bootstrap_room = ?json_request
-                        .get(Self::BOOTSTRAP_ROOM_KEY)
-                        .and_then(Value::as_u64)
-                        .map(|room| room.to_string()),
+                    bootstrap_room = ?bootstrap_room.map(|room| room.to_string()),
+                    room_correlation = if bootstrap_room.is_some() {
+                        "single_room"
+                    } else {
+                        "missing_or_batch_room"
+                    },
                     connect_error = e.is_connect(),
                     timeout_error = e.is_timeout(),
                     error = ?e,
