@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 import numpy as np
 import torch
+from sglang.srt.observability.performance_events import recorder as performance_events
 from sglang.srt.disaggregation.base import KVPoll
 from sglang.srt.disaggregation.base.conn import StateType
 from sglang.srt.disaggregation.checksum import (
@@ -199,6 +200,8 @@ class PrefillBootstrapQueue:
         self.gpu_id = gpu_id
         self.bootstrap_port = bootstrap_port
         self.queue: List[Req] = []
+        if performance_events.enabled:
+            performance_events.queue_depth("bootstrap", len(self.queue))
         self.scheduler = scheduler
         self.scheduler_stage_metrics = scheduler_stage_metrics
         # Each rank owns a subset of logical KV pages, so capacity widens by N.
@@ -458,6 +461,8 @@ class PrefillBootstrapQueue:
         if not self.create_sender(req, num_kv_heads):
             return
         self.queue.append(req)
+        if performance_events.enabled:
+            performance_events.queue_depth("bootstrap", len(self.queue))
 
     def extend(self, reqs: List[Req], num_kv_heads: int) -> None:
         for req in reqs:
@@ -552,11 +557,15 @@ class PrefillBootstrapQueue:
         self.queue = [
             entry for i, entry in enumerate(self.queue) if i not in indices_to_remove
         ]
+        if performance_events.enabled:
+            performance_events.queue_depth("bootstrap", len(self.queue))
 
         return bootstrapped_reqs
 
     def release_memory_occupation(self):
         self.queue.clear()
+        if performance_events.enabled:
+            performance_events.queue_depth("bootstrap", len(self.queue))
         if hasattr(self.kv_manager, "deregister_buffer_to_engine"):
             self.kv_manager.deregister_buffer_to_engine()
 
@@ -635,6 +644,8 @@ class SchedulerDisaggregationPrefillMixin:
             self.waiting_queue = [
                 req for req in self.waiting_queue if req not in failed
             ]
+            if performance_events.enabled:
+                performance_events.queue_depth("execution_wait", len(self.waiting_queue))
 
     def has_bootstrapped_waiting_req(self: Scheduler) -> bool:
         return any(
@@ -693,6 +704,8 @@ class SchedulerDisaggregationPrefillMixin:
             self.waiting_queue.extend(
                 self.disagg_prefill_bootstrap_queue.pop_bootstrapped()
             )
+            if performance_events.enabled:
+                performance_events.queue_depth("execution_wait", len(self.waiting_queue))
 
             # Get the next batch to run
             plan = self.get_next_disagg_prefill_batch_to_run(
@@ -781,6 +794,8 @@ class SchedulerDisaggregationPrefillMixin:
                 continue
             bootstrapped_reqs = self.disagg_prefill_bootstrap_queue.pop_bootstrapped()
             self.waiting_queue.extend(bootstrapped_reqs)
+            if performance_events.enabled:
+                performance_events.queue_depth("execution_wait", len(self.waiting_queue))
             # Resume batch creation on completion, new/ready requests, or an idle step.
             if not waiting_for_batch_result or received_inputs or bootstrapped_reqs:
                 skip_batch_creation = False
@@ -1009,6 +1024,8 @@ class SchedulerDisaggregationPrefillMixin:
 
                 self.checkpoint_disagg_prefill(req)
                 self.disagg_prefill_inflight_queue.append(req)
+                if performance_events.enabled:
+                    performance_events.queue_depth("inflight", len(self.disagg_prefill_inflight_queue))
                 if self.spec_algorithm.is_eagle() and draft_input is not None:
                     req.output_topk_p = draft_input.topk_p[i]
                     req.output_topk_index = draft_input.topk_index[i]
@@ -1253,6 +1270,8 @@ class SchedulerDisaggregationPrefillMixin:
             )
 
         self.disagg_prefill_inflight_queue = undone_reqs
+        if performance_events.enabled:
+            performance_events.queue_depth("inflight", len(self.disagg_prefill_inflight_queue))
 
         return done_reqs
 
@@ -1798,6 +1817,8 @@ class SchedulerDisaggregationPrefillMixin:
                 req, self.req_to_metadata_buffer_idx_allocator
             )
             self.disagg_prefill_bootstrap_queue.queue.append(req)
+            if performance_events.enabled:
+                performance_events.queue_depth("bootstrap", len(self.disagg_prefill_bootstrap_queue.queue))
         else:
             req.prefill_attempt_count += 1
             logger.info(
@@ -1809,3 +1830,5 @@ class SchedulerDisaggregationPrefillMixin:
             req.time_stats.set_wait_queue_entry_time()
             req.arrival_processed_tokens = self.processed_tokens_counter
             self.waiting_queue.insert(0, req)
+            if performance_events.enabled:
+                performance_events.queue_depth("execution_wait", len(self.waiting_queue))

@@ -1140,7 +1140,7 @@
       ],
       "hypothesis": "Larger host cache helps retention only if there is host memory and useful reuse; faster copy can help when loadback lies on the critical path.",
       "next_test": "Hold hit distribution constant for IO backend comparison; inspect pending gates and H2D time, not just end-of-run throughput.",
-      "remaining_gap": "No exact exposed-vs-overlapped H2D time or per-request transfer attribution. UnifiedRadixCache.evict_host returns component-level freed tokens without a dedicated wrapper observation, so device-drop counters do not establish L2 host eviction volume. Existing generic host occupancy lacks per-component pool/byte coverage; source-selected anchor saturation cannot measure every physical pool.",
+      "remaining_gap": "Candidate UnifiedRadixCache host/device eviction and transfer-ack events now expose completed wrapper operations by component, subject to activation/loss/native qualification. They do not measure physical pool bytes, exposed GPU cost, per-request transfer ownership, exceptions before return, buffer-only bypasses, or other cache implementations.",
       "evidence": "Full GB200 baseline shows logicalhostanchor growth beyond15min and capacity around33\u201334.5min. All40windows retain zero device-without-backup drop deltas; this is not ordinaryhost-eviction volume. No sharp persistent queue/computedprefill deterioration immediately follows anchorcapacity."
     },
     {
@@ -2626,7 +2626,7 @@
       ],
       "hypothesis": "Locality can reduce prefill work, while overconcentration can increase queue time.",
       "next_test": "Compare per-worker arrival/queue slopes and tier hit rates on the same trace; use gateway/Dynamo routing metrics.",
-      "remaining_gap": "Router decision explanations are not added to either Rust gateway or external Dynamo by this patch.",
+      "remaining_gap": "Router decision explanations are not added to either Rust gateway or external Dynamo by this patch. The deployed decode_gate.rs permit has no wait/acquire/release episode producer: backend arrival/queue events cannot establish dispatch-limit pressure. Add a bounded cancellation-safe RAII permit ledger with worker identity, occupancy, wait and release reason before making that mechanism claim; native source/build qualification required.",
       "evidence": "gateway source-audited; external Dynamo integration not audited in this branch"
     },
     {
@@ -3708,6 +3708,265 @@
         "anchor": "SGLANG_PD_LIFECYCLE_SAMPLE_EVERY ="
       },
       "review_status": "causal_mapping"
+    },
+    {
+      "id": "event.queue.initial",
+      "kind": "event",
+      "name": "queue.initial",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"queue.initial\""
+      },
+      "fields": [
+        "depth",
+        "high",
+        "low",
+        "queue"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#queue.initial",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.queue.pressure_enter",
+      "kind": "event",
+      "name": "queue.pressure_enter",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"queue.pressure_enter\""
+      },
+      "fields": [
+        "depth",
+        "episode",
+        "high",
+        "low",
+        "queue"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#queue.pressure_enter",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.queue.pressure_exit",
+      "kind": "event",
+      "name": "queue.pressure_exit",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"queue.pressure_exit\""
+      },
+      "fields": [
+        "depth",
+        "duration_seconds",
+        "episode",
+        "high",
+        "low",
+        "peak_depth",
+        "queue"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#queue.pressure_exit",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.arrival.window",
+      "kind": "event",
+      "name": "arrival.window",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"arrival.window\""
+      },
+      "fields": [
+        "baseline_rate",
+        "input_tokens",
+        "max_input_tokens",
+        "rate",
+        "requests",
+        "window_seconds"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#arrival.window",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.arrival.surge_enter",
+      "kind": "event",
+      "name": "arrival.surge_enter",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"arrival.surge_enter\""
+      },
+      "fields": [
+        "baseline_rate",
+        "episode",
+        "minimum_rate",
+        "rate",
+        "ratio"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#arrival.surge_enter",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.arrival.surge_exit",
+      "kind": "event",
+      "name": "arrival.surge_exit",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"arrival.surge_exit\""
+      },
+      "fields": [
+        "baseline_rate",
+        "duration_seconds",
+        "episode",
+        "peak_rate",
+        "rate"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#arrival.surge_exit",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.cache.device_evict",
+      "kind": "event",
+      "name": "cache.device_evict",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"cache.device_evict\""
+      },
+      "fields": [
+        "component",
+        "duration_seconds",
+        "freed",
+        "reason",
+        "requested"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#cache.device_evict",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.cache.host_evict",
+      "kind": "event",
+      "name": "cache.host_evict",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"cache.host_evict\""
+      },
+      "fields": [
+        "component",
+        "duration_seconds",
+        "freed",
+        "reason",
+        "requested"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#cache.host_evict",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.cache.backup_complete",
+      "kind": "event",
+      "name": "cache.backup_complete",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"cache.backup_complete\""
+      },
+      "fields": [
+        "ack_nodes",
+        "bytes"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#cache.backup_complete",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.cache.loadback_complete",
+      "kind": "event",
+      "name": "cache.loadback_complete",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"cache.loadback_complete\""
+      },
+      "fields": [
+        "ack_nodes",
+        "bytes"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#cache.loadback_complete",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.decode.retraction",
+      "kind": "event",
+      "name": "decode.retraction",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"decode.retraction\""
+      },
+      "fields": [
+        "aborted",
+        "reason",
+        "requests",
+        "tokens_gained"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#decode.retraction",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "event.decision.changed",
+      "kind": "event",
+      "name": "decision.changed",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"decision.changed\""
+      },
+      "fields": [
+        "current",
+        "domain",
+        "duration_seconds",
+        "previous",
+        "repeats"
+      ],
+      "activation": "SGLANG_PERFORMANCE_EVENTS=1; decision.changed additionally requires the existing tuning producer path/activation.",
+      "contract": "performance_event_contracts.json#decision.changed",
+      "qualification": "Implemented candidate; CPU/pipe receipts are not native serving or overhead qualification."
+    },
+    {
+      "id": "env.SGLANG_PERFORMANCE_EVENTS",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_PERFORMANCE_EVENTS ="
+      },
+      "behavior": "Controls event activation, bounded rate or analytical queue threshold; never a serving capacity."
+    },
+    {
+      "id": "env.SGLANG_PERFORMANCE_EVENTS_RATE",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_PERFORMANCE_EVENTS_RATE ="
+      },
+      "behavior": "Controls event activation, bounded rate or analytical queue threshold; never a serving capacity."
+    },
+    {
+      "id": "env.SGLANG_PERFORMANCE_EVENTS_QUEUE_HIGH",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_PERFORMANCE_EVENTS_QUEUE_HIGH ="
+      },
+      "behavior": "Controls event activation, bounded rate or analytical queue threshold; never a serving capacity."
+    },
+    {
+      "id": "env.SGLANG_PERFORMANCE_EVENTS_QUEUE_LOW",
+      "kind": "environment",
+      "source": {
+        "path": "python/sglang/srt/environ.py",
+        "anchor": "SGLANG_PERFORMANCE_EVENTS_QUEUE_LOW ="
+      },
+      "behavior": "Controls event activation, bounded rate or analytical queue threshold; never a serving capacity."
     }
   ],
   "edges": [
@@ -5462,6 +5721,221 @@
       "source": "mechanism.measurement",
       "target": "log.pd_lifecycle",
       "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "event.queue.initial",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "event.queue.initial",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.queue.initial",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "event.queue.pressure_enter",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "event.queue.pressure_enter",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.queue.pressure_enter",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.pd_ownership",
+      "target": "event.queue.pressure_enter",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "event.queue.pressure_exit",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.readiness",
+      "target": "event.queue.pressure_exit",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.queue.pressure_exit",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.pd_ownership",
+      "target": "event.queue.pressure_exit",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "event.arrival.window",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.routing",
+      "target": "event.arrival.window",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "event.arrival.window",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "event.arrival.surge_enter",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.routing",
+      "target": "event.arrival.surge_enter",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "event.arrival.surge_enter",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.frontend",
+      "target": "event.arrival.surge_exit",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.routing",
+      "target": "event.arrival.surge_exit",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "event.arrival.surge_exit",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "event.cache.device_evict",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "event.cache.device_evict",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "event.cache.device_evict",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.dsv4_request_pool_sizing",
+      "target": "event.cache.device_evict",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "event.cache.host_evict",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.dsv4_host_sizing",
+      "target": "event.cache.host_evict",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.cache_reuse",
+      "target": "event.cache.host_evict",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "event.cache.backup_complete",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "event.cache.backup_complete",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.host_cache",
+      "target": "event.cache.loadback_complete",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.transport",
+      "target": "event.cache.loadback_complete",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.future_growth",
+      "target": "event.decode.retraction",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.kv_memory",
+      "target": "event.decode.retraction",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.decode_reservation",
+      "target": "event.decode.retraction",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_tokens",
+      "target": "event.decision.changed",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.graph_dispatch",
+      "target": "event.decision.changed",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.request_admission",
+      "target": "event.decision.changed",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.prefill_decode_cadence",
+      "target": "event.decision.changed",
+      "relation": "observed_by"
+    },
+    {
+      "source": "mechanism.hybrid_pools",
+      "target": "event.decision.changed",
+      "relation": "observed_by"
+    },
+    {
+      "source": "env.SGLANG_PERFORMANCE_EVENTS",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "env.SGLANG_PERFORMANCE_EVENTS_RATE",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "env.SGLANG_PERFORMANCE_EVENTS_QUEUE_HIGH",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
+    },
+    {
+      "source": "env.SGLANG_PERFORMANCE_EVENTS_QUEUE_LOW",
+      "target": "mechanism.measurement",
+      "relation": "controls_or_constrains"
     }
   ]
 }

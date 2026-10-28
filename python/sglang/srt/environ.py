@@ -483,6 +483,11 @@ class Envs:
     SGLANG_TUNING_MOE_BUFFER_STATS = EnvBool(False)
     # Sample existing SPF/HRRN sorting/admission passes; zero disables.
     # Opt-in PD state/ownership records; IDs stay out of metric labels.
+    # Bounded operation/condition events, independently enabled from snapshots.
+    SGLANG_PERFORMANCE_EVENTS = EnvBool(False)
+    SGLANG_PERFORMANCE_EVENTS_RATE = EnvInt(200)
+    SGLANG_PERFORMANCE_EVENTS_QUEUE_HIGH = EnvInt(128)
+    SGLANG_PERFORMANCE_EVENTS_QUEUE_LOW = EnvInt(64)
     SGLANG_PD_LIFECYCLE_INTERVAL = EnvFloat(0.0)
     SGLANG_PD_LIFECYCLE_MAX_REQUESTS = EnvInt(4096)
     SGLANG_PD_LIFECYCLE_MAX_EVENTS = EnvInt(1024)

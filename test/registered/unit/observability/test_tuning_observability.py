@@ -427,6 +427,8 @@ class DecodeAdmissionTest(unittest.TestCase):
             {"pop_preallocated"},
             dict(
                 tuning_recorder=r,
+                pd_lifecycle=NS(observe=lambda *a, **k: None),
+                performance_events=NS(enabled=False),
                 FINISH_ABORT=Abort,
                 get_disagg=lambda: NS(disaggregation_decode_host_receive_threshold=1),
                 ensure_mamba_capacity=lambda *a: gate != "mamba_capacity",

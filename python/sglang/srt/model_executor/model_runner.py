@@ -478,6 +478,9 @@ class ModelRunner:
                 dp_rank=get_parallel().dp_rank,
                 attn_dp_rank=get_parallel().attn_dp_rank,
             )
+            from sglang.srt.observability import performance_events, pd_lifecycle
+
+            performance_events.configure(pd_lifecycle.recorder.context)
             configure(
                 get_observability().tuning_observation_interval,
                 allocator_sampler=(

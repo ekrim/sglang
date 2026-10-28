@@ -1,0 +1,879 @@
+{
+  "schema_version": 1,
+  "base_commit": "65a1382008a8e7757985ce1c94cdba46199b3fbc",
+  "scope": "All 33 source causal mechanisms mapped in this campaign graph, concrete scheduler/cache/model-runner producers, and deployed router source 4bf98cdcb87df4f39064fe064d6622ed7cd224e5. This is not a claim that all537 server options or every kernel is causally audited.",
+  "method": "Read source anchors and existing observations; inspect actual mutation/operation return sites and control edges. Classify operation events, derived condition episodes, existing sampled/aggregate evidence and retained gaps. Audit disabled behavior, identity, units, rank duplication, clocks, bounded work, cancellation, transport and consumer closure.",
+  "mechanisms": [
+    {
+      "mechanism": "mechanism.prefill_tokens",
+      "source": {
+        "path": "python/sglang/srt/managers/schedule_policy.py",
+        "anchor": "def budget_state"
+      },
+      "controls": [
+        "config.chunked_prefill_size",
+        "config.max_prefill_tokens",
+        "config.enable_dynamic_chunking",
+        "config.SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK"
+      ],
+      "existing_observations": [
+        "metric.prefill_effective_tokens_total",
+        "metric.num_queue_reqs",
+        "metric.num_running_reqs",
+        "log.dsv41_prefill_autotune",
+        "log.policy_pass"
+      ],
+      "candidate_events": [
+        "event.prefill.input_budget",
+        "event.prefill.chunk_budget",
+        "event.prefill.admitted",
+        "event.prefill.replay_budget",
+        "event.prefill.chunk_alignment",
+        "event.prefill.chunk_slot",
+        "event.prefill.delayer",
+        "event.decision.changed"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Not all specialized DLLM/ignore-EOS stops have reason logs; inspect residual budget/queue evidence."
+    },
+    {
+      "mechanism": "mechanism.request_admission",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler.py",
+        "anchor": "def get_num_allocatable_reqs"
+      },
+      "controls": [
+        "config.max_running_requests",
+        "config.prefill_max_requests"
+      ],
+      "existing_observations": [
+        "metric.num_running_reqs",
+        "metric.num_queue_reqs",
+        "metric.kv_available_tokens",
+        "log.pd_lifecycle"
+      ],
+      "candidate_events": [
+        "event.prefill.request_slots",
+        "event.prefill.request_limit",
+        "event.decode.request_slots",
+        "event.decode.metadata_slots",
+        "event.queue.initial",
+        "event.queue.pressure_enter",
+        "event.queue.pressure_exit",
+        "event.decision.changed"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "The aggregate request_slots event has no site or component-budget fields. A future sampled receipt should retain the already-computed PP/free/held/beam budgets and candidate threshold at the actual stop, without extra pool/readiness calls. Counts are gate encounters, not requests or blocked time."
+    },
+    {
+      "mechanism": "mechanism.future_growth",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler_components/new_token_ratio_tracker.py",
+        "anchor": "def from_config"
+      },
+      "controls": [
+        "config.schedule_conservativeness",
+        "config.SGLANG_INIT_NEW_TOKEN_RATIO",
+        "config.SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR",
+        "config.SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS"
+      ],
+      "existing_observations": [
+        "metric.new_token_ratio",
+        "metric.num_retracted_requests_total",
+        "metric.kv_available_tokens"
+      ],
+      "candidate_events": [
+        "event.prefill.memory_budget",
+        "event.prefill.full_capacity",
+        "event.prefill.admitted",
+        "event.decode.retraction"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "No claim that one ratio controls every admission path; logs report reservations rather than attributing all refusals to this knob."
+    },
+    {
+      "mechanism": "mechanism.decode_reservation",
+      "source": {
+        "path": "python/sglang/srt/disaggregation/decode.py",
+        "anchor": "def _required_admission_tokens"
+      },
+      "controls": [
+        "config.num_reserved_decode_tokens",
+        "config.disaggregation_decode_extra_slots",
+        "config.disaggregation_decode_host_receive_threshold"
+      ],
+      "existing_observations": [
+        "metric.num_decode_prealloc_queue_reqs",
+        "metric.num_decode_transfer_queue_reqs",
+        "metric.pending_prealloc_token_usage",
+        "metric.num_decode_host_receive_queue_reqs",
+        "log.pd_lifecycle"
+      ],
+      "candidate_events": [
+        "event.decode.kv_budget",
+        "event.decode.request_slots",
+        "event.decode.metadata_slots",
+        "event.decode.preallocated",
+        "event.decode.host_capacity",
+        "event.decode.mamba_capacity",
+        "event.decode.hisparse_capacity",
+        "event.queue.initial",
+        "event.queue.pressure_enter",
+        "event.queue.pressure_exit",
+        "event.decode.retraction"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Bounded lifecycle acquisitions/releases and pool accounting expose last observed holders, including exceptional/unattributed rows. Physical shared KV allocation failure and wire progress remain unresolved; host branches require path-specific tests."
+    },
+    {
+      "mechanism": "mechanism.readiness",
+      "source": {
+        "path": "python/sglang/srt/disaggregation/prefill.py",
+        "anchor": "def check_bootstrap"
+      },
+      "controls": [
+        "config.disaggregation_decode_allocation_policy",
+        "config.optimistic_prefill_attempts",
+        "config.disaggregation_decode_polling_interval"
+      ],
+      "existing_observations": [
+        "metric.num_prefill_bootstrap_queue_reqs",
+        "metric.num_prefill_inflight_queue_reqs",
+        "metric.num_decode_prealloc_queue_reqs",
+        "metric.kv_transfer_bootstrap_ms",
+        "metric.kv_transfer_alloc_ms",
+        "metric.num_prefill_retries_total",
+        "log.pd_lifecycle"
+      ],
+      "candidate_events": [
+        "event.decode.handshake_pending",
+        "event.decode.preallocated",
+        "event.decode.kv_budget",
+        "event.queue.initial",
+        "event.queue.pressure_enter",
+        "event.queue.pressure_exit"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Bootstrapping still combines peer discovery/readiness. PD lifecycle hooks distinguish observed local transport, metadata gate and consensus, with bounded-loss indicators; no wire-byte progress or cross-host critical-path timing. Completed histograms censor stalled requests."
+    },
+    {
+      "mechanism": "mechanism.kv_memory",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler_components/pool_stats_observer.py",
+        "anchor": "class SchedulerPoolStatsObserver"
+      },
+      "controls": [
+        "config.mem_fraction_static",
+        "config.max_total_tokens",
+        "config.kv_cache_dtype",
+        "config.page_size"
+      ],
+      "existing_observations": [
+        "metric.max_total_num_tokens",
+        "metric.kv_cache_memory_usage_gb",
+        "metric.weight_memory_usage_gb",
+        "metric.graph_memory_usage_gb",
+        "metric.kv_available_tokens",
+        "metric.kv_evictable_tokens",
+        "metric.kv_used_tokens",
+        "log.cuda_allocator_snapshot"
+      ],
+      "candidate_events": [
+        "event.prefill.full_capacity",
+        "event.decode.kv_budget",
+        "event.cache.device_evict",
+        "event.decode.retraction"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Reserved workspace overhead by backend is not fully exported; no GPU-memory polling added."
+    },
+    {
+      "mechanism": "mechanism.hybrid_pools",
+      "source": {
+        "path": "python/sglang/srt/mem_cache/prefill_budget.py",
+        "anchor": "class SharedSWAPrefillBudget"
+      },
+      "controls": [
+        "config.swa_full_tokens_ratio",
+        "config.max_mamba_cache_size",
+        "config.mamba_full_memory_ratio",
+        "config.enable_unified_memory",
+        "config.swa_prefix_tails",
+        "mechanism.dsv4_request_pool_sizing"
+      ],
+      "existing_observations": [
+        "metric.full_token_usage",
+        "metric.swa_token_usage",
+        "metric.mamba_usage",
+        "metric.swa_available_tokens",
+        "metric.mamba_available_tokens",
+        "metric.max_total_num_tokens_swa"
+      ],
+      "candidate_events": [
+        "event.prefill.full_capacity",
+        "event.prefill.swa_capacity",
+        "event.prefill.shared_capacity",
+        "event.prefill.swa_chunk_cap",
+        "event.decode.kv_budget",
+        "event.cache.device_evict",
+        "event.decision.changed"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Joint shared-byte shortfall not expressible as one token count; logs deliberately do not invent a limiting pool."
+    },
+    {
+      "mechanism": "mechanism.cache_reuse",
+      "source": {
+        "path": "python/sglang/srt/managers/schedule_policy.py",
+        "anchor": "def _account_prefill_cache_admission"
+      },
+      "controls": [
+        "config.disable_radix_cache",
+        "config.radix_eviction_policy",
+        "config.disaggregation_decode_enable_radix_cache"
+      ],
+      "existing_observations": [
+        "metric.prefill_effective_tokens_total",
+        "metric.cache_hit_rate",
+        "metric.evicted_tokens_total",
+        "metric.load_back_tokens_total",
+        "log.policy_pass"
+      ],
+      "candidate_events": [
+        "event.prefill.admitted",
+        "event.decode.preallocated",
+        "event.arrival.window",
+        "event.arrival.surge_enter",
+        "event.arrival.surge_exit",
+        "event.cache.device_evict",
+        "event.cache.host_evict"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Cache metrics alone cannot establish counterfactual recompute savings."
+    },
+    {
+      "mechanism": "mechanism.host_cache",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler.py",
+        "anchor": "check_prefetch_progress"
+      },
+      "controls": [
+        "config.enable_hierarchical_cache",
+        "config.hicache_ratio",
+        "config.hicache_size",
+        "config.hicache_host_memory_fraction",
+        "config.hicache_io_backend",
+        "config.hicache_mem_layout",
+        "config.hicache_write_policy",
+        "config.hicache_storage_backend",
+        "config.hicache_storage_prefetch_policy",
+        "mechanism.dsv4_host_sizing"
+      ],
+      "existing_observations": [
+        "metric.hicache_host_used_tokens",
+        "metric.hicache_host_total_tokens",
+        "metric.load_back_duration_seconds",
+        "metric.load_back_bytes_total",
+        "metric.hicache_backup_bytes_total",
+        "metric.storage_prefetch_unfulfilled_tokens_total",
+        "metric.eviction_duration_seconds",
+        "metric.hicache_backup_duration_seconds",
+        "metric.hicache_backup_tokens_total",
+        "metric.hicache_dropped_tokens_total"
+      ],
+      "candidate_events": [
+        "event.prefill.prefetch_pending",
+        "event.prefill.staging_pending",
+        "event.cache.host_evict",
+        "event.cache.backup_complete",
+        "event.cache.loadback_complete"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Candidate UnifiedRadixCache host/device eviction and transfer-ack events now expose completed wrapper operations by component, subject to activation/loss/native qualification. They do not measure physical pool bytes, exposed GPU cost, per-request transfer ownership, exceptions before return, buffer-only bypasses, or other cache implementations."
+    },
+    {
+      "mechanism": "mechanism.parallel_geometry",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/parallel_hook.py",
+        "anchor": "original_chunked_prefill_size"
+      },
+      "controls": [
+        "config.tp_size",
+        "config.dp_size",
+        "config.ep_size",
+        "config.pp_size",
+        "config.enable_dp_attention",
+        "config.attn_dp_size"
+      ],
+      "existing_observations": [
+        "metric.dp_attention_token_imbalance_ratio",
+        "metric.dp_attention_sync_wait_seconds",
+        "metric.dp_cooperation_realtime_tokens_total",
+        "metric.dp_attention_tokens_total"
+      ],
+      "candidate_events": [
+        "event.graph.prefill.dp_vote",
+        "event.graph.prefill.dp_inactive",
+        "event.prefill.admitted"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "No built-in cross-service ratio recommendation; deployment worker counts belong to launcher, not a single SGLang flag."
+    },
+    {
+      "mechanism": "mechanism.graph_dispatch",
+      "source": {
+        "path": "python/sglang/srt/model_executor/model_runner.py",
+        "anchor": "def _forward_raw"
+      },
+      "controls": [
+        "config.cuda_graph_backend_prefill",
+        "config.cuda_graph_backend_decode",
+        "config.cuda_graph_max_bs_prefill",
+        "config.cuda_graph_max_bs_decode",
+        "config.cuda_graph_prefill_max_context",
+        "config.cuda_graph_max_seq_len_prefill",
+        "config.disable_prefill_cuda_graph",
+        "config.disable_decode_cuda_graph",
+        "config.enable_torch_compile",
+        "config.max_running_requests"
+      ],
+      "existing_observations": [
+        "metric.cuda_graph_passes_total",
+        "metric.is_cuda_graph",
+        "metric.graph_memory_usage_gb",
+        "metric.forward_execution_seconds_total"
+      ],
+      "candidate_events": [
+        "event.graph.prefill.context_coverage",
+        "event.graph.prefill.token_coverage",
+        "event.graph.prefill.padding",
+        "event.graph.prefill.request_capacity",
+        "event.graph.prefill.metadata_capacity",
+        "event.graph.prefill.dp_vote",
+        "event.graph.prefill.dp_inactive",
+        "event.graph.prefill.mixed_batch",
+        "event.graph.prefill.attention_backend",
+        "event.forward.target.prefill_graph",
+        "event.forward.target.eager",
+        "event.forward.target.decode_runner",
+        "event.graph.prefill.cp_bucket",
+        "event.graph.prefill.cp_inactive",
+        "event.graph.prefill.cp_shape",
+        "event.graph.prefill.hidden_mode",
+        "event.graph.prefill.input_embeddings",
+        "event.graph.prefill.local_ineligible",
+        "event.graph.prefill.logprobs",
+        "event.graph.prefill.lora",
+        "event.graph.prefill.multimodal",
+        "event.graph.prefill.platform_prefix",
+        "event.graph.prefill.prefix_coverage",
+        "event.graph.prefill.replacement_embeddings",
+        "event.graph.prefill.target_verify",
+        "event.forward.target.split_prefill",
+        "event.forward.draft.prefill_graph",
+        "event.forward.draft.split_prefill",
+        "event.decision.changed"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Eligibility event counts can include schedule-time and forward-time checks; cannot divide them by forwards. Not all decode fallback reasons are instrumented. Dispatch is not proof every layer used a graph."
+    },
+    {
+      "mechanism": "mechanism.replay",
+      "source": {
+        "path": "python/sglang/srt/managers/schedule_policy.py",
+        "anchor": "def _replay_len"
+      },
+      "controls": [
+        "config.enable_encoder_swa_bounded_replay",
+        "config.enable_decoder_swa_bounded_replay"
+      ],
+      "existing_observations": [
+        "metric.prefill_effective_tokens_total",
+        "metric.forward_execution_seconds_total",
+        "metric.max_total_num_tokens_swa"
+      ],
+      "candidate_events": [
+        "event.prefill.admitted",
+        "event.prefill.replay_budget",
+        "event.graph.prefill.context_coverage"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Per-layer eager replay tail CPU/GPU split still requires profiler; row counts alone do not measure cost."
+    },
+    {
+      "mechanism": "mechanism.moe_backend",
+      "source": {
+        "path": "python/sglang/srt/layers/moe/flashinfer_megamoe.py",
+        "anchor": "def _select_megamoe_forward"
+      },
+      "controls": [
+        "config.moe_runner_backend",
+        "config.moe_a2a_backend",
+        "config.SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
+        "config.SGLANG_FLASHINFER_MEGAMOE_MAX_TOKENS_PER_RANK"
+      ],
+      "existing_observations": [
+        "metric.forward_execution_seconds_total",
+        "metric.weight_memory_usage_gb",
+        "metric.kv_cache_memory_usage_gb",
+        "log.moe_buffer_creation"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "Internal Generic/GenPhase dispatch is in external libraries and not established by SGLang flags. Planned: capture-time variant manifest plus replay-key linkage; do not add Python per-kernel counters and call them runtime counts."
+    },
+    {
+      "mechanism": "mechanism.expert_balance",
+      "source": {
+        "path": "python/sglang/srt/eplb/eplb_manager.py",
+        "anchor": "class EPLBManager"
+      },
+      "controls": [
+        "config.enable_eplb",
+        "config.ep_num_redundant_experts",
+        "config.eplb_rebalance_num_iterations"
+      ],
+      "existing_observations": [
+        "metric.eplb_balancedness",
+        "metric.eplb_gpu_physical_count",
+        "metric.forward_execution_seconds_total"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "Need bounded per-layer/rank imbalance summary and rebalance wall/exposed time; existing histogram alone is not a speedup measurement."
+    },
+    {
+      "mechanism": "mechanism.speculation",
+      "source": {
+        "path": "python/sglang/srt/speculative/dspark_components/dspark_observability.py",
+        "anchor": "class DsparkInfoDumper"
+      },
+      "controls": [
+        "config.speculative_algorithm",
+        "config.speculative_dspark_block_size",
+        "config.SGLANG_SIMULATE_ACC_LEN",
+        "config.SGLANG_SIMULATE_ACC_METHOD",
+        "config.SGLANG_SIMULATE_ACC_TOKEN_MODE"
+      ],
+      "existing_observations": [
+        "metric.spec_accept_length",
+        "metric.spec_accept_rate",
+        "metric.spec_cap_length",
+        "metric.spec_block_accept_length",
+        "metric.spec_num_draft_tokens",
+        "metric.realtime_tokens_total"
+      ],
+      "candidate_events": [
+        "event.forward.draft.eager",
+        "event.forward.draft.decode_runner"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "No portable claim that synthetic AL matches real-serving compute or accuracy."
+    },
+    {
+      "mechanism": "mechanism.overlap",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler_components/metrics_reporter.py",
+        "anchor": "self.scheduler_stage_metrics ="
+      },
+      "controls": [
+        "config.disable_overlap_schedule",
+        "config.scheduler_recv_interval",
+        "config.enable_mixed_chunk",
+        "config.prefill_decode_interval"
+      ],
+      "existing_observations": [
+        "metric.scheduler_stage_seconds_total",
+        "metric.scheduler_process_cpu_seconds_total",
+        "metric.scheduler_idle_seconds_total",
+        "metric.forward_execution_seconds_total",
+        "metric.fwd_occupancy"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "No conversion from full/partial/none overlap samples to exact exposed milliseconds."
+    },
+    {
+      "mechanism": "mechanism.frontend",
+      "source": {
+        "path": "python/sglang/srt/observability/http_request_metrics.py",
+        "anchor": "class _HttpRequestMetrics"
+      },
+      "controls": [
+        "config.tokenizer_worker_num",
+        "config.stream_interval",
+        "config.max_queued_requests"
+      ],
+      "existing_observations": [
+        "metric.http_requests_total",
+        "metric.http_requests_active",
+        "metric.num_requests_total",
+        "metric.num_queue_reqs",
+        "metric.time_to_first_token_seconds"
+      ],
+      "candidate_events": [
+        "event.arrival.window",
+        "event.arrival.surge_enter",
+        "event.arrival.surge_exit"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "No universal cross-router request-arrival ledger; external Dynamo/OS metrics required; HTTP counters are not scheduler-arrival counters."
+    },
+    {
+      "mechanism": "mechanism.engram_numa",
+      "source": {
+        "path": "python/sglang/srt/layers/engram.py",
+        "anchor": "SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT"
+      },
+      "controls": [
+        "config.SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE",
+        "config.SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT",
+        "config.SGLANG_NUMA_BIND_V2"
+      ],
+      "existing_observations": [
+        "metric.weight_memory_usage_gb",
+        "metric.max_total_num_tokens",
+        "metric.forward_execution_seconds_total",
+        "metric.hicache_host_used_tokens",
+        "log.engram_host_backing"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "Existing per-layer startup logs report layout, resident MiB, huge-page MiB and collapse errors. They do not measure exposed lookup time or prove effective CPU/NUMA placement; collect OS placement and competing file-I/O evidence. Startup is a one-time receipt; it does not establish backing stability throughout the replay. Aggregate process smaps cannot identify each table without mapping identity."
+    },
+    {
+      "mechanism": "mechanism.transport",
+      "source": {
+        "path": "python/sglang/srt/disaggregation/decode.py",
+        "anchor": "def pop_transferred"
+      },
+      "controls": [
+        "config.disaggregation_transfer_backend",
+        "config.disaggregation_ib_device"
+      ],
+      "existing_observations": [
+        "metric.kv_transfer_speed_gb_s",
+        "metric.kv_transfer_latency_ms",
+        "metric.kv_transfer_total_mb",
+        "metric.num_decode_transfer_queue_reqs",
+        "metric.num_transfer_failed_reqs_total",
+        "metric.num_decode_deferred_kv_release_reqs",
+        "log.pd_lifecycle"
+      ],
+      "candidate_events": [
+        "event.decode.preallocated",
+        "event.decode.handshake_pending",
+        "event.cache.backup_complete",
+        "event.cache.loadback_complete"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "No per-request wire-vs-poll critical-path decomposition; completed-transfer metrics omit currently stuck transfers."
+    },
+    {
+      "mechanism": "mechanism.measurement",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler_components/metrics_reporter.py",
+        "anchor": "def _init_metrics"
+      },
+      "controls": [
+        "config.enable_metrics",
+        "config.enable_metrics_for_all_schedulers",
+        "config.decode_log_interval",
+        "config.enable_forward_pass_metrics",
+        "config.tuning_observation_interval",
+        "config.SGLANG_ENABLE_METRICS_DEVICE_TIMER",
+        "config.SGLANG_ENABLE_METRICS_DP_ATTENTION",
+        "config.SGLANG_TUNING_CUDA_ALLOCATOR_STATS",
+        "config.SGLANG_TUNING_MOE_BUFFER_STATS",
+        "env.SGLANG_PERFORMANCE_EVENTS",
+        "env.SGLANG_PERFORMANCE_EVENTS_RATE",
+        "env.SGLANG_PERFORMANCE_EVENTS_QUEUE_HIGH",
+        "env.SGLANG_PERFORMANCE_EVENTS_QUEUE_LOW"
+      ],
+      "existing_observations": [
+        "metric.scheduler_stage_seconds_total",
+        "metric.forward_execution_seconds_total",
+        "metric.prefill_effective_tokens_total",
+        "metric.dp_attention_token_imbalance_ratio",
+        "metric.dp_attention_sync_wait_seconds",
+        "metric.dp_cooperation_realtime_tokens_total",
+        "metric.dp_attention_tokens_total",
+        "log.cuda_allocator_snapshot",
+        "log.moe_buffer_creation",
+        "metric.pd_queue_snapshot_timestamp_seconds",
+        "log.pd_lifecycle"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "Low-cardinality tuning flush remains event driven. Opt-in PD lifecycle heartbeat supplies separate queue/ownership freshness during no-forward phases; native activation and consumer completeness need tested receipts. Silence never establishes health."
+    },
+    {
+      "mechanism": "mechanism.routing",
+      "source": {
+        "path": "sgl-model-gateway/src/policies/cache_aware.rs",
+        "anchor": "impl LoadBalancingPolicy for CacheAwarePolicy"
+      },
+      "controls": [],
+      "existing_observations": [
+        "metric.prefill_effective_tokens_total",
+        "metric.num_queue_reqs"
+      ],
+      "candidate_events": [
+        "event.arrival.window",
+        "event.arrival.surge_enter",
+        "event.arrival.surge_exit"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Router decision explanations are not added to either Rust gateway or external Dynamo by this patch. The deployed decode_gate.rs permit has no wait/acquire/release episode producer: backend arrival/queue events cannot establish dispatch-limit pressure. Add a bounded cancellation-safe RAII permit ledger with worker identity, occupancy, wait and release reason before making that mechanism claim; native source/build qualification required."
+    },
+    {
+      "mechanism": "mechanism.prefill_decode_cadence",
+      "source": {
+        "path": "python/sglang/srt/managers/scheduler.py",
+        "anchor": "def _should_defer_prefill"
+      },
+      "controls": [
+        "config.prefill_decode_interval"
+      ],
+      "existing_observations": [
+        "log.prefill.decode_interval",
+        "metric.num_queue_reqs"
+      ],
+      "candidate_events": [
+        "event.decision.changed"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "No exposed wall-time or oldest eligible request age is attributed to this gate. Queue presence does not prove all queued requests are otherwise eligible."
+    },
+    {
+      "mechanism": "mechanism.decoder_tail_graph",
+      "source": {
+        "path": "python/sglang/srt/models/deepseek_v4_replay_tail.py",
+        "anchor": "class DecoderReplayTail"
+      },
+      "controls": [
+        "config.SGLANG_DSV4_DECODER_TAIL_GRAPH_MAX_ROWS",
+        "config.SGLANG_DSV4_DECODER_TAIL_GRAPH_MIN_PREFILL_TOKENS"
+      ],
+      "existing_observations": [
+        "log.decoder_tail_graph_capture"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "No fixed-cardinality replay/capture/fallback counter by row bucket and eligibility reason; existing log reports rank0 capture totals only."
+    },
+    {
+      "mechanism": "mechanism.http_cache_accounting",
+      "source": {
+        "path": "python/sglang/srt/entrypoints/openai/usage_processor.py",
+        "anchor": "def calculate_streaming_usage"
+      },
+      "controls": [
+        "config.enable_cache_report"
+      ],
+      "existing_observations": [
+        "response.prompt_cached_tokens",
+        "metric.prefill_effective_tokens_total"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "This field is a count, not per-request cache-transfer duration, cache tier timing or exposed cadence wait. Overhead neutrality and client coverage need runtime verification."
+    },
+    {
+      "mechanism": "mechanism.tree_core_selection",
+      "source": {
+        "path": "python/sglang/srt/mem_cache/unified_cache/tree_core_registry.py",
+        "anchor": "def _rust_fallback_reason"
+      },
+      "controls": [
+        "config.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+        "config.SGLANG_RUST_BUILD_MODE"
+      ],
+      "existing_observations": [
+        "log.unified_tree_core"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "Existing Init Unified Radix Cache log names the constructed class but does not give a complete requested/resolved selection receipt. Capture bounded startup fields instead of guessing from package version."
+    },
+    {
+      "mechanism": "mechanism.prefill_ordering",
+      "source": {
+        "path": "python/sglang/srt/managers/schedule_policy.py",
+        "anchor": "def _sort_by_shortest_prefill"
+      },
+      "controls": [
+        "config.schedule_policy",
+        "config.SGLANG_TUNING_POLICY_INTERVAL"
+      ],
+      "existing_observations": [
+        "log.shortest_prefill_order",
+        "metric.queue_time_seconds",
+        "metric.num_queue_reqs",
+        "metric.time_to_first_token_seconds",
+        "log.policy_pass"
+      ],
+      "candidate_events": [
+        "event.prefill.chunk_slot"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Bounded queue, candidate-visit and continuation observations are now implemented and CPU-tested, default off; full serving integration and overhead remain unvalidated. Current episode age omits earlier episodes; sampled visits exclude unvisited candidates. No critical-path duration or unique causal attribution is claimed."
+    },
+    {
+      "mechanism": "mechanism.optional_image_backend_probe",
+      "source": {
+        "path": "python/sglang/srt/multimodal/processors/deepseek_v41.py",
+        "anchor": "elif backend == \"auto\":"
+      },
+      "controls": [
+        "config.image_processor_backend"
+      ],
+      "existing_observations": [
+        "log.image_backend_fallback"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "The optional version probe has no bounded timeout or begin/end receipt. A fallback warning appears only after failure, so absent output is ambiguous. No new producer implemented."
+    },
+    {
+      "mechanism": "mechanism.dsv41_execution_compatibility",
+      "source": {
+        "path": "python/sglang/srt/arg_groups/deepseek_v4_hook.py",
+        "anchor": "def validate_deepseek_v41_features"
+      },
+      "controls": [
+        "config.dsv4_attn_backend",
+        "config.disaggregation_mode",
+        "config.cuda_graph_backend_prefill",
+        "config.chunked_prefill_size"
+      ],
+      "existing_observations": [
+        "log.dsv41_trtllm_selected",
+        "log.dsv41_trtllm_pd_rejected",
+        "log.dsv41_trtllm_prefill_graph_rejected"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "Backend compatibility is revision/topology/path specific. Campaign native PD outcomes now exist; consult canonical outcome references, not this source map, for current validation. Kernel dispatch cost cannot be inferred from selected backend."
+    },
+    {
+      "mechanism": "mechanism.dsv4_host_sizing",
+      "source": {
+        "path": "python/sglang/srt/mem_cache/hybrid_cache/hybrid_pool_assembler.py",
+        "anchor": "def _deepseek_v4_num_host_pages"
+      },
+      "controls": [
+        "config.mem_fraction_static",
+        "config.hicache_ratio",
+        "config.hicache_size",
+        "mechanism.kv_memory",
+        "mechanism.dsv4_request_pool_sizing"
+      ],
+      "existing_observations": [
+        "metric.hicache_host_total_tokens",
+        "log.dsv4_hicache_size_unsupported"
+      ],
+      "candidate_events": [
+        "event.cache.host_evict"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "No paired performance or headroom benefit established by source algebra; logical host capacity does not measure every physical component."
+    },
+    {
+      "mechanism": "mechanism.dsv4_request_pool_sizing",
+      "source": {
+        "path": "python/sglang/srt/model_executor/pool_configurator.py",
+        "anchor": "def _resolve_swa_cap_tokens"
+      },
+      "controls": [
+        "config.max_running_requests",
+        "config.swa_prefix_tails",
+        "config.chunked_prefill_size"
+      ],
+      "existing_observations": [
+        "log.dsv4_memory_calculation",
+        "metric.max_total_num_tokens"
+      ],
+      "candidate_events": [
+        "event.cache.device_evict"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "The startup sizing receipt does not measure all allocations, transient headroom, host prefix loss or the independent throughput contribution of each coupled mechanism."
+    },
+    {
+      "mechanism": "mechanism.dsv41_mega_mhc_dispatch",
+      "source": {
+        "path": "python/sglang/srt/models/deepseek_v4_mhc.py",
+        "anchor": "def _post_fusion("
+      },
+      "controls": [
+        "config.SGLANG_OPT_DSV41_MEGA_MHC_PREFILL"
+      ],
+      "existing_observations": [],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "No distinct selected-branch log in this path. Existing optional capture traces may reveal actual kernel identities during startup; their export receipt alone is insufficient. Eager/mode-specific incidence, exact missed-dispatch predicates, exposed cost and replay frequency remain unresolved."
+    },
+    {
+      "mechanism": "mechanism.capture_kernel_profile",
+      "source": {
+        "path": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py",
+        "anchor": "def _init_profile_context_and_memory_record("
+      },
+      "controls": [
+        "config.enable_profile_cuda_graph",
+        "config.SGLANG_ENABLE_CUDA_GRAPH_CAPTURE_TRACE"
+      ],
+      "existing_observations": [
+        "log.cuda_graph_capture_trace_saved"
+      ],
+      "candidate_events": [],
+      "disposition": "existing_observations_retained_gap_not_closed",
+      "remaining_gap": "No steady-state mode-specific incidence, exact missed-dispatch predicate or exposed critical-path attribution. Profiler overhead and coverage must be checked."
+    },
+    {
+      "mechanism": "mechanism.pd_ownership",
+      "source": {
+        "path": "python/sglang/srt/observability/pd_lifecycle.py",
+        "anchor": "class PDLifecycleRecorder:"
+      },
+      "controls": [
+        "config.SGLANG_PD_LIFECYCLE_INTERVAL",
+        "config.SGLANG_PD_LIFECYCLE_MAX_REQUESTS",
+        "config.SGLANG_PD_LIFECYCLE_MAX_EVENTS",
+        "config.SGLANG_PD_LIFECYCLE_SAMPLE_EVERY"
+      ],
+      "existing_observations": [
+        "log.pd_lifecycle"
+      ],
+      "candidate_events": [
+        "event.queue.pressure_enter",
+        "event.queue.pressure_exit"
+      ],
+      "disposition": "new_event_producers_plus_retained_gaps",
+      "remaining_gap": "Native serving activation, capture transport and overhead require version-specific qualification receipts. Mixed stdout/stderr and concurrent writers require actual collector validation. Physical shared KV ownership, wire-byte progress and PP/CP/PDMux are not established. Never infer a leak from an omitted release under incomplete history."
+    }
+  ],
+  "priority_gaps": [
+    {
+      "id": "router_dispatch_permits",
+      "priority": "high_for_dispatch_limit_tuning",
+      "source": "sgl-model-gateway/src/routers/http/decode_gate.rs:DecodeGate.admit/DecodeSlot.release",
+      "knob": "decode_dispatch_limit",
+      "producer_definition": "Bounded per-selected-prefill-worker wait_enter/acquired/released/cancelled events; RAII must cover timeout/drop paths, unique attempt identity, permit occupancy/limit, process-local monotonic timing and explicit losses. Native rebuilt-artifact route test before use.",
+      "status": "defined_not_implemented_in_this_backend_candidate"
+    },
+    {
+      "id": "upstream_offered_load",
+      "priority": "high_for_subsecond_burst_attribution",
+      "producer_definition": "Client/router actual HTTP arrival time, original shape metadata and selected-worker routing changes, bounded and correlated; backend queue offers are not upstream offered load.",
+      "status": "backend_window_producer_implemented_upstream_gap_retained"
+    },
+    {
+      "id": "native_overhead_and_coverage",
+      "priority": "blocking_candidate_promotion",
+      "producer_definition": "Actual ARM image/imported callsites and concurrent SRT merged capture, expected rank counts, close receipts, volume/loss and enabled/disabled CPU/native serving overhead under representative event rate.",
+      "status": "pending_native_qualification"
+    }
+  ]
+}

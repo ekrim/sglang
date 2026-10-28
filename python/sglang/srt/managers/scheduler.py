@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Set, Tuple, 
 from sglang.srt.observability.pd_lifecycle import recorder as pd_lifecycle
 from sglang.srt.observability.pd_lifecycle import scheduler_heartbeat
 from sglang.srt.observability.tuning import recorder as tuning_recorder
+from sglang.srt.observability.performance_events import recorder as performance_events
 from sglang.srt.runtime_context import (
     SpawnRanks,
     attention_backends,
@@ -1310,6 +1311,8 @@ class Scheduler(
         # Set by the ShutdownReq handler to break the event loop for graceful shutdown.
         self.gracefully_exit = False
         self.waiting_queue: List[Req] = []
+        if performance_events.enabled:
+            performance_events.queue_depth("execution_wait", len(self.waiting_queue))
         # The running decoding batch for continuous batching
         self.running_batch: ScheduleBatch = ScheduleBatch(reqs=[], batch_is_full=False)
         # The current forward batch
@@ -1617,6 +1620,8 @@ class Scheduler(
             )
             # The prefill requests that are in the middle of kv sending
             self.disagg_prefill_inflight_queue: List[Req] = []
+            if performance_events.enabled:
+                performance_events.queue_depth("inflight", len(self.disagg_prefill_inflight_queue))
             # Requests with a sent chunk that are not yet on the inflight queue.
             self.disagg_prefill_pending_chunk_rids: Set[str] = set()
 
@@ -2184,6 +2189,7 @@ class Scheduler(
     def process_input_requests(self, recv_reqs: List):
         now = time.monotonic()
         scheduler_heartbeat(self, now)
+        performance_events.tick()
         self.session_controller.maybe_reap(now)
 
         for recv_req in recv_reqs:
@@ -3432,12 +3438,18 @@ class Scheduler(
             req.storage_prefetch_retry_attempts = 0
             req.storage_prefetch_last_match_len = None
             req.staged_prefetch_plan = None
+        if performance_events.enabled and not is_retracted and not getattr(req, "_perf_arrival_seen", False):
+            # Scheduler queue offer, not HTTP receipt or successful admission.
+            req._perf_arrival_seen = True
+            performance_events.arrival(len(req.origin_input_ids))
         if self.disaggregation_mode == DisaggregationMode.NULL:
             if self._abort_on_queued_limit(req):
                 self._release_aborted_request(req)
                 return
             self._prefetch_kvcache(req)
             self.waiting_queue.append(req)
+            if performance_events.enabled:
+                performance_events.queue_depth("execution_wait", len(self.waiting_queue))
             req.time_stats.set_wait_queue_entry_time()
             req.arrival_processed_tokens = self.processed_tokens_counter
         elif self.disaggregation_mode == DisaggregationMode.PREFILL:
@@ -3525,6 +3537,8 @@ class Scheduler(
             if abort_existing_req:
                 self._release_aborted_request(candidate_req)
                 self.waiting_queue.pop(idx)
+                if performance_events.enabled:
+                    performance_events.queue_depth("execution_wait", len(self.waiting_queue))
                 self.beam_coordinator.retire_group(candidate_req)
                 req_to_abort = candidate_req
                 message = "The request is aborted by a higher priority request."
@@ -4331,6 +4345,8 @@ class Scheduler(
             for req in can_run_list:
                 retries.cancel(req.rid)
         self.waiting_queue = [x for x in self.waiting_queue if x not in can_run_set]
+        if performance_events.enabled:
+            performance_events.queue_depth("execution_wait", len(self.waiting_queue))
         if adder.preempt_list:
             for req in adder.preempt_list:
                 self._add_request_to_queue(req)
@@ -4507,6 +4523,12 @@ class Scheduler(
             retracted_reqs, new_token_ratio, reqs_to_abort = batch.retract_decode()
             new_available_tokens = self.token_to_kv_pool_allocator.available_size()
             new_token_gained = new_available_tokens - old_available_tokens
+            if performance_events.enabled:
+                performance_events.event(
+                    "decode.retraction", requests=len(retracted_reqs),
+                    aborted=len(reqs_to_abort), tokens_gained=new_token_gained,
+                    reason="kv_capacity" if kv_full_retract_flag else "test",
+                )
             mamba_num_gained = (
                 mamba_allocator.available_size() - old_mamba_available
                 if mamba_allocator is not None
@@ -5649,6 +5671,8 @@ class Scheduler(
             # This only works for requests that have not started anything.
             # We still need to send something back to TokenizerManager to clean up the state.
             req = self.waiting_queue.pop(i)
+            if performance_events.enabled:
+                performance_events.queue_depth("execution_wait", len(self.waiting_queue))
             self._release_aborted_request(req)
             self.beam_coordinator.retire_group(req)
             # Without the initiator's reason the tokenizer falls back to a
@@ -5835,6 +5859,8 @@ class Scheduler(
                 self.waiting_queue = [
                     r for r in self.waiting_queue if not r.kv.holds_kv
                 ]
+                if performance_events.enabled:
+                    performance_events.queue_depth("execution_wait", len(self.waiting_queue))
                 retract_reqs += staged
 
         self.last_batch = None

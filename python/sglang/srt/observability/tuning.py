@@ -29,6 +29,7 @@ class TuningRecorder:
         clock=time.monotonic,
         emit=None,
         allocator_sampler=None,
+        event_recorder=None,
     ):
         if not math.isfinite(interval) or interval < 0:
             raise ValueError(
@@ -40,6 +41,7 @@ class TuningRecorder:
         self.clock = clock
         self.emit = emit or self._log
         self.allocator_sampler = allocator_sampler
+        self.event_recorder = event_recorder
         self.start = clock() if self.enabled else 0.0
         self.counts = Counter()
         self.samples = {}
@@ -49,6 +51,8 @@ class TuningRecorder:
         logger.info("tuning_observation %s", json.dumps(record, sort_keys=True))
 
     def observe(self, event, **values):
+        if self.event_recorder is not None:
+            self.event_recorder.decision(event)
         if not self.enabled:
             return
         # Event/field names are literals at call sites. Values are CPU scalars;
@@ -286,9 +290,12 @@ def log_mega_moe_buffer(buffer, *, requested_token_cap, group_size, num_sms):
 
 
 def configure(interval, *, allocator_sampler=None, **context):
+    from sglang.srt.observability.performance_events import recorder as events
+
     # Preserve object identity: call sites import this single object.
     recorder.__init__(
         interval,
         dict(host=socket.gethostname(), pid=os.getpid(), **context),
         allocator_sampler=allocator_sampler,
+        event_recorder=events,
     )

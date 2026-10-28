@@ -119,6 +119,7 @@ from sglang.srt.observability.scheduler_stage_metrics import (
     scheduler_stage_method,
 )
 from sglang.srt.observability.tuning import recorder as tuning_recorder
+from sglang.srt.observability.performance_events import recorder as performance_events
 from sglang.srt.runtime_context import (
     get_device,
     get_disagg,
@@ -429,7 +430,11 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
         self.transfer_backend = transfer_backend
         # Queue for requests pending pre-allocation
         self.queue: List[DecodeRequest] = []
+        if performance_events.enabled:
+            performance_events.queue_depth("preallocation", len(self.queue))
         self.retracted_queue: List[Req] = []
+        if performance_events.enabled:
+            performance_events.queue_depth("retracted", len(self.retracted_queue))
         self.pending_reqs: List[DecodeRequest] = []
         # In-flight authoritative room -> DP-rank lookups, consumed below.
         self._prefill_dp_rank_queries: Dict[
@@ -825,6 +830,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
         if is_retracted:
             req.retraction_mb_id = None
             self.retracted_queue.append(req)
+            if performance_events.enabled:
+                performance_events.queue_depth("retracted", len(self.retracted_queue))
         else:
             decode_req = self._create_receiver_and_enqueue(
                 req, is_rebootstrap=is_rebootstrap
@@ -901,6 +908,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             req=req, kv_receiver=kv_receiver, is_rebootstrap=is_rebootstrap
         )
         self.queue.append(decode_req)
+        if performance_events.enabled:
+            performance_events.queue_depth("preallocation", len(self.queue))
         return decode_req
 
     def hold_rebootstrap(self, req: Req) -> None:
@@ -991,6 +1000,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
     def release_memory_occupation(self):
         self._cancel_prefill_dp_rank_queries()
         self.queue.clear()
+        if performance_events.enabled:
+            performance_events.queue_depth("preallocation", len(self.queue))
         for req in self.retracted_queue:
             discard_kv_cache_backup(
                 req,
@@ -998,6 +1009,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 get_disagg().disaggregation_decode_retraction_backup,
             )
         self.retracted_queue.clear()
+        if performance_events.enabled:
+            performance_events.queue_depth("retracted", len(self.retracted_queue))
         if hasattr(self.kv_manager, "deregister_buffer_to_engine"):
             self.kv_manager.deregister_buffer_to_engine()
 
@@ -1085,6 +1098,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             for i, entry in enumerate(self.retracted_queue)
             if i not in indices_to_remove
         ]
+        if performance_events.enabled:
+            performance_events.queue_depth("retracted", len(self.retracted_queue))
 
         return resumed_reqs
 
@@ -1845,6 +1860,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
         self.queue = [
             entry for i, entry in enumerate(self.queue) if i not in indices_to_remove
         ]
+        if performance_events.enabled:
+            performance_events.queue_depth("preallocation", len(self.queue))
 
         return preallocated_reqs, failed_reqs
 
@@ -2539,6 +2556,8 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
         tree_cache: BasePrefixCache,
     ):
         self.queue: List[DecodeRequest] = []
+        if performance_events.enabled:
+            performance_events.queue_depth("transfer", len(self.queue))
         self.gloo_group = get_parallel().attn_tp_group.cpu_group
         self.req_to_metadata_buffer_idx_allocator = req_to_metadata_buffer_idx_allocator
         self.tp_rank = get_parallel().tp_rank
@@ -2564,9 +2583,13 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
 
     def add(self, decode_req: DecodeRequest) -> None:
         self.queue.append(decode_req)
+        if performance_events.enabled:
+            performance_events.queue_depth("transfer", len(self.queue))
 
     def extend(self, decode_reqs: List[DecodeRequest]) -> None:
         self.queue.extend(decode_reqs)
+        if performance_events.enabled:
+            performance_events.queue_depth("transfer", len(self.queue))
         # This queue now covers them.
         prealloc_queue = self.scheduler.disagg_decode_prealloc_queue
         if prealloc_queue is not None:
@@ -2961,6 +2984,8 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
         self.queue = [
             entry for i, entry in enumerate(self.queue) if i not in indices_to_remove
         ]
+        if performance_events.enabled:
+            performance_events.queue_depth("transfer", len(self.queue))
 
         return transferred_reqs
 
@@ -3101,6 +3126,8 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
     def release_memory_occupation(self):
         """Clean up in-flight transfers before releasing GPU memory."""
         self.queue.clear()
+        if performance_events.enabled:
+            performance_events.queue_depth("transfer", len(self.queue))
         # Pool is being torn down; drop held entries without per-request release.
         self._deferred_releases.clear()
 
@@ -3377,6 +3404,8 @@ class SchedulerDisaggregationDecodeMixin:
                 waiting_queue.append(req)
 
         self.waiting_queue = waiting_queue
+        if performance_events.enabled:
+            performance_events.queue_depth("execution_wait", len(self.waiting_queue))
         if len(can_run_list) == 0:
             return None
 
@@ -3426,6 +3455,8 @@ class SchedulerDisaggregationDecodeMixin:
         # try to resume retracted requests if there are enough space for another `num_reserved_decode_tokens` decode steps
         resumed_reqs = self.disagg_decode_prealloc_queue.resume_retracted_reqs()
         self.waiting_queue.extend(resumed_reqs)
+        if performance_events.enabled:
+            performance_events.queue_depth("execution_wait", len(self.waiting_queue))
         if len(self.disagg_decode_prealloc_queue.retracted_queue) > 0:
             # if there are still retracted requests, we do not allocate new requests
             return
@@ -3448,6 +3479,8 @@ class SchedulerDisaggregationDecodeMixin:
                     # Direct-to-host: KV data already in host pool, skip staging
                     self.hisparse_coordinator.admit_request_direct(req)
             self.waiting_queue.extend(transferred_reqs)
+            if performance_events.enabled:
+                performance_events.queue_depth("execution_wait", len(self.waiting_queue))
             if get_disagg().disaggregation_decode_host_receive_threshold < 1:
                 # Give completed host transfers device space before new arrivals.
                 req_conns, _ = self.disagg_decode_prealloc_queue.pop_preallocated()

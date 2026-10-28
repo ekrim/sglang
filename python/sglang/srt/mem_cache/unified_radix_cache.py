@@ -21,6 +21,7 @@ from typing import (
 import msgspec
 import torch
 
+from sglang.srt.observability.performance_events import recorder as performance_events
 from sglang.srt.distributed.communication_tags import P2PTag
 from sglang.srt.environ import envs
 from sglang.srt.managers.cache_controller import CacheOperation
@@ -808,6 +809,18 @@ class UnifiedRadixCache(BasePrefixCache):
         ):
             self.writing_check(write_back=True)
 
+        if performance_events.enabled:
+            duration = time.perf_counter() - start_time
+            for component in self.tree_components:
+                performance_events.event(
+                    "cache.device_evict", component=component.name,
+                    requested=request_by_type.get(component, 0),
+                    freed=tracker.get(component, 0), duration_seconds=duration,
+                    reason=("joint_reclaim" if allocation_reclaim_satisfied is not None
+                            else "availability_target" if available_size_targets is not None
+                            else "quota"),
+                )
+
         # Report full-layer tokens only
         self.update_eviction_metrics(tracker[BASE_COMPONENT_TYPE], start_time)
         return EvictResult(
@@ -1416,9 +1429,17 @@ class UnifiedRadixCache(BasePrefixCache):
             # The tree never holds host values in buffer mode, and staging
             # is operation-owned (freed at each ack): nothing is evictable.
             return 0
+        started = time.perf_counter() if performance_events.enabled else None
         result = self.tree_core.drive_host_eviction(component_type, num_tokens)
         self._apply_eviction_result(result)
-        return result.tracker.get(component_type, 0)
+        freed = result.tracker.get(component_type, 0)
+        if performance_events.enabled:
+            performance_events.event(
+                "cache.host_evict", component=component_type.name,
+                requested=num_tokens, freed=freed,
+                duration_seconds=time.perf_counter() - started, reason="host_pool_space",
+            )
+        return freed
 
     # ---- Decode retraction ----
 
@@ -3485,6 +3506,9 @@ class UnifiedRadixCache(BasePrefixCache):
 
     def _log_write_ack_metrics(self, ack: HiCacheAck) -> None:
         """Record D->H backup volume and duration for a completed write ack."""
+        if performance_events.enabled:
+            performance_events.event("cache.backup_complete", bytes=ack.num_bytes,
+                                     ack_nodes=len(ack.node_ids))
         if self.metrics_collector is None:
             return
         for pool, num_tokens in (ack.num_tokens_by_pool or {}).items():
@@ -3536,6 +3560,9 @@ class UnifiedRadixCache(BasePrefixCache):
                 # Unpin the loaded nodes; host copies stay as reclaimable duplicates.
                 self.tree_core.finish_load_back(node)
 
+            if performance_events.enabled:
+                performance_events.event("cache.loadback_complete", bytes=ack.num_bytes,
+                                         ack_nodes=len(ack.node_ids))
             if self.metrics_collector is not None:
                 for pool, num_tokens in (ack.num_tokens_by_pool or {}).items():
                     if num_tokens > 0:

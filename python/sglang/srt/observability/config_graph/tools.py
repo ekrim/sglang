@@ -150,6 +150,37 @@ def check(graph):
             rule["id"]
         )
         assert isinstance(rule["runtime_evidence"], list), rule["id"]
+    events_spec = importlib.util.spec_from_file_location(
+        "performance_event_contract", HERE.parent / "performance_events.py"
+    )
+    events_module = importlib.util.module_from_spec(events_spec)
+    events_spec.loader.exec_module(events_module)
+    event_contracts = json.loads((HERE / "performance_event_contracts.json").read_text())
+    contracts = {c["id"]: c for c in event_contracts["contracts"]}
+    assert set(contracts) == set(events_module.FIELDS)
+    event_nodes = {n["name"]: n for n in nodes.values() if n["kind"] == "event"}
+    assert set(event_nodes) == set(contracts)
+    for name, fields in events_module.FIELDS.items():
+        assert contracts[name]["fields"] == event_nodes[name]["fields"] == sorted(fields)
+        assert contracts[name]["semantics"] and contracts[name]["status"]
+    event_hooks = set()
+    for path in (ROOT / "python/sglang/srt").rglob("*.py"):
+        source = path.read_text()
+        if "performance_events.event(" not in source and path != HERE.parent / "performance_events.py":
+            continue
+        for call in ast.walk(ast.parse(source)):
+            if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "event" and call.args
+                    and isinstance(call.args[0], ast.Constant)):
+                name = call.args[0].value
+                assert name in events_module.FIELDS, (path, name)
+                assert {k.arg for k in call.keywords} == events_module.FIELDS[name], (path, name)
+                event_hooks.add(name)
+    assert event_hooks == set(contracts), ("event producer missing", set(contracts)-event_hooks)
+    audit = json.loads((HERE / "event_producer_audit.json").read_text())
+    assert {m["mechanism"] for m in audit["mechanisms"]} == {
+        n["id"] for n in nodes.values() if n["kind"] == "mechanism"
+    }
     lifecycle = json.loads((HERE / "pd_lifecycle_contracts.json").read_text())
     for contract in lifecycle["contracts"]:
         source = contract["source"]
@@ -160,6 +191,7 @@ def check(graph):
             path, name = test.split("::")
             assert "def " + name + "(" in (ROOT / path).read_text(), test
     return dict(
+        performance_event_contracts=len(contracts),
         lifecycle_contracts=len(lifecycle["contracts"]),
         explanation_rules=len(rule_ids),
         nodes=len(nodes),

@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "classification": "Source contracts and explicit qualification limits; not empirical conclusions.",
+  "transport": {
+    "prefix": "performance_event ",
+    "queue_capacity": 1024,
+    "max_record_bytes": 4096,
+    "default_event_rate_per_process_per_second": 200,
+    "rate_limit": "Fixed monotonic-second bucket; rejected events advance seq and cumulative loss. This can censor episodes; never reinterpret drops as zero.",
+    "identity": "Shared PD lifecycle incarnation plus host, pid, role, TP/PP/DP/attention-DP rank. Do not sum duplicate TP/DP observations or subtract different-process monotonic times.",
+    "delivery": "Occurrence timestamp recorded before nonblocking put; independent daemon emits immediately and heartbeat each second, atomic writes bounded by PIPE_BUF. No hot-path logging or serialization. Native SRT merged capture and expected producer cardinality remain mandatory.",
+    "closure": "Consumer requires initial contiguous delivery, contiguous attempted event seq, zero loss, closed receipt and expected producers. Fatal exit, missing tail/producer or blocked sink is incomplete. Heartbeat proves sink thread activity, not scheduler/serving progress.",
+    "privacy": "No requests, prompts, token IDs, URLs, room IDs, credentials or arbitrary exception text."
+  },
+  "contracts": [
+    {
+      "id": "queue.initial",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"queue.initial\""
+      },
+      "fields": [
+        "depth",
+        "high",
+        "low",
+        "queue"
+      ],
+      "semantics": "First observed queue depth. Thresholds are diagnostic counts, not physical/request pool capacity. Initialized only on active instrumented mutations; no initial record is unknown.",
+      "graph_nodes": [
+        "event.queue.initial"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "queue.pressure_enter",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"queue.pressure_enter\""
+      },
+      "fields": [
+        "depth",
+        "episode",
+        "high",
+        "low",
+        "queue"
+      ],
+      "semantics": "Immediate depth>=high crossing at a known queue mutation. Episode IDs scoped to process incarnation. No extra oldest-age scan or capacity query.",
+      "graph_nodes": [
+        "event.queue.pressure_enter"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "queue.pressure_exit",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"queue.pressure_exit\""
+      },
+      "fields": [
+        "depth",
+        "duration_seconds",
+        "episode",
+        "high",
+        "low",
+        "peak_depth",
+        "queue"
+      ],
+      "semantics": "Depth<=low ends the same episode; duration is local-monotonic between observed crossings and peak is over instrumented mutations. Cancellation/flush can cause recovery without useful progress.",
+      "graph_nodes": [
+        "event.queue.pressure_exit"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "arrival.window",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"arrival.window\""
+      },
+      "fields": [
+        "baseline_rate",
+        "input_tokens",
+        "max_input_tokens",
+        "rate",
+        "requests",
+        "window_seconds"
+      ],
+      "semantics": "One-second-minimum scheduler queue-offer window, emitted on next tick/offer, including idle ticks. First offer per Req excluding explicit retraction; includes downstream enqueue failures/health probes that reach this path. Not HTTP arrival or successful admission. Original input token count only, no payload. Long scheduler stalls lengthen windows, and subsecond bursts are not uniquely classified.",
+      "graph_nodes": [
+        "event.arrival.window"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "arrival.surge_enter",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"arrival.surge_enter\""
+      },
+      "fields": [
+        "baseline_rate",
+        "episode",
+        "minimum_rate",
+        "rate",
+        "ratio"
+      ],
+      "semantics": "Completed rate window >= max(32 requests/s, 2x prior baseline). EWMA alpha0.1 over completed nonsurge windows, frozen during surge; first window initializes baseline and cannot establish surge. Signal time is window detection, not exact burst onset.",
+      "graph_nodes": [
+        "event.arrival.surge_enter"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "arrival.surge_exit",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"arrival.surge_exit\""
+      },
+      "fields": [
+        "baseline_rate",
+        "duration_seconds",
+        "episode",
+        "peak_rate",
+        "rate"
+      ],
+      "semantics": "Completed rate window <= max(16 requests/s, 1.25x frozen baseline). Duration between detections; local rate peak, not instantaneous arrival peak.",
+      "graph_nodes": [
+        "event.arrival.surge_exit"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "cache.device_evict",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"cache.device_evict\""
+      },
+      "fields": [
+        "component",
+        "duration_seconds",
+        "freed",
+        "reason",
+        "requested"
+      ],
+      "semantics": "Successful _evict wrapper completion, per component requested/freed logical units (FULL/SWA/C128 tokens; MAMBA slots per component implementation). Reason is call quota/target mode, not a root cause. Shared inclusive CPU wall duration repeated across components: do not sum. Device eviction may retain host backup; not L2 destruction. Failure-before-return absent.",
+      "graph_nodes": [
+        "event.cache.device_evict"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "cache.host_evict",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"cache.host_evict\""
+      },
+      "fields": [
+        "component",
+        "duration_seconds",
+        "freed",
+        "reason",
+        "requested"
+      ],
+      "semantics": "Successful non-buffer-only evict_host wrapper completion, component requested/freed logical units; zero freed is explicit failed reclamation, not no attempt. Host-pool-space reason does not identify every caller. No physical bytes/unique prompts or cross-component addition.",
+      "graph_nodes": [
+        "event.cache.host_evict"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "cache.backup_complete",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"cache.backup_complete\""
+      },
+      "fields": [
+        "ack_nodes",
+        "bytes"
+      ],
+      "semantics": "One existing D->H completed ack, CPU byte count and node count. May contain multiple pools. Does not add timing GPU reads, and carries neither submission duration nor exposed overlap cost.",
+      "graph_nodes": [
+        "event.cache.backup_complete"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "cache.loadback_complete",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"cache.loadback_complete\""
+      },
+      "fields": [
+        "ack_nodes",
+        "bytes"
+      ],
+      "semantics": "One existing H->D completed ack after production completion/cleanup; bytes and nodes. No extra GPU polling/synchronization. Not wire transfer or per-request ownership.",
+      "graph_nodes": [
+        "event.cache.loadback_complete"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "decode.retraction",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"decode.retraction\""
+      },
+      "fields": [
+        "aborted",
+        "reason",
+        "requests",
+        "tokens_gained"
+      ],
+      "semantics": "One completed scheduler retraction call; already-computed requests, aborted count and full-pool token delta. Distinguishes real KV pressure from test trigger. Not eviction and not proof of leaked ownership.",
+      "graph_nodes": [
+        "event.decode.retraction"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    },
+    {
+      "id": "decision.changed",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "\"decision.changed\""
+      },
+      "fields": [
+        "current",
+        "domain",
+        "duration_seconds",
+        "previous",
+        "repeats"
+      ],
+      "semantics": "Transition of the last observed tuning event within bounded domains (prefill, decode, graph.prefill, forward.target/draft). Repeat count is observations; duration is time between observations, NOT time blocked or exposed execution cost. Multiple gates per pass can alternate; missing gated producers remain unknown.",
+      "graph_nodes": [
+        "event.decision.changed"
+      ],
+      "status": "candidate_implemented_native_unqualified"
+    }
+  ],
+  "unsupported": [
+    "PP/CP/PDMux/DLLM and alternative cache implementations not qualified; PP/DLLM queue mutations outside the inspected campaign path are not comprehensively hooked.",
+    "Router semaphore wait/acquire/release and selected-worker rebalance episodes remain absent.",
+    "No physical byte ownership, wire-byte progress, dynamic Engram backing changes, per-layer kernel replay events or continuous oldest-age tracking.",
+    "Decision producers guarded by tuning_recorder.enabled need tuning_observation_interval>0. Other events activate independently.",
+    "Queue pressure/arrival events do not contain request IDs; same-incarnation PD lifecycle ledger supplies bounded holder/stage cohorts, with its own sampling/loss limits."
+  ]
+}

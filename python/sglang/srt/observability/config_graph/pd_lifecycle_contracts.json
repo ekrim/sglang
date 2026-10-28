@@ -139,6 +139,33 @@
         "8MiB record maximum; fragments are single writes bounded by PIPE_BUF. Sink errors/drop totals can themselves be lost on process death.",
         "Separate stdout/stderr capture can interleave inside atomic producer frames downstream. Native same-stream tests alone do not establish mixed-stream delivery; qualification belongs to the actual collector path."
       ]
+    },
+    {
+      "id": "pd.event_episode_join",
+      "question": "Did system pressure coincide with advancing owners, stalled stages, or cancellation cleanup?",
+      "source": {
+        "path": "python/sglang/srt/observability/performance_events.py",
+        "anchor": "def configure(context)"
+      },
+      "activation": "Performance events and PD lifecycle both enabled; same process incarnation; independently qualified activation, delivery, sampling/loss, topology and source hashes.",
+      "phase_coverage": [
+        "waiting_only",
+        "active",
+        "cancellation_cleanup"
+      ],
+      "tests": [
+        "test/registered/unit/observability/test_performance_events.py::test_short_pressure_episode_and_hysteresis",
+        "test/registered/unit/observability/test_performance_events.py::test_real_concurrent_atomic_pipe_and_closed_consumer"
+      ],
+      "decision": {
+        "if_observation_A": "Same-incarnation pressure episode and advancing/released original holders: investigate load/capacity/service tradeoff.",
+        "if_observation_B": "Stalled or cancellation-retained holders: diagnose named stage/dependency. Missing events/history/producer: unknown, repair observation before attributing."
+      },
+      "limits": [
+        "Events have no request identity; join to bounded PD ledger via process/rank/time, not guessed request matching.",
+        "Consumer closure is not native qualification or causal proof. Queue recovery can be cancellation or flush.",
+        "Router waiting is outside backend incarnation and requires a separate qualified producer."
+      ]
     }
   ]
 }

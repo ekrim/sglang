@@ -41,7 +41,8 @@
               "metric",
               "decision_log",
               "log_line",
-              "response_field"
+              "response_field",
+              "event"
             ]
           },
           "source": {

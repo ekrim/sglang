@@ -519,6 +519,98 @@
       "outcome_refs": [
         "decisions/outcomes/r20.json"
       ]
+    },
+    {
+      "id": "event-workload-pressure",
+      "graph_nodes": [
+        "event.arrival.window",
+        "event.arrival.surge_enter",
+        "event.arrival.surge_exit",
+        "event.queue.pressure_enter",
+        "event.queue.pressure_exit"
+      ],
+      "observation": "A surge window precedes queue pressure in the same worker/incarnation.",
+      "diagnosis": "Candidate supply/service imbalance, conditional on unchanged request mix and worker selection.",
+      "alternatives": [
+        "Closed-loop clients accelerate when service improves.",
+        "Longer prompts or routing skew can increase work without request-rate surge.",
+        "Scheduler stalls lengthen windows and shift detection time."
+      ],
+      "check": "Align retained pre/during/post arrival windows, input tokens, admission decisions, completion rate and PD oldest holder cohorts. Check a comparable non-surge window and coverage before attributing.",
+      "action": "Test one concurrency/routing or service-capacity change if eligible advancing work accumulates; repair missing upstream arrival/dispatch events if ordering is ambiguous.",
+      "expected": "Shorter queue episodes without throughput or user-speed regression.",
+      "reject_if": "Only wall-clock coincidence, changed workload/backing, censored events or worsening canonical Pareto metrics.",
+      "status": "Prospective conditional source-backed rule. No native event evidence or performance benefit yet; preserve prior explanation revisions and counterevidence.",
+      "runtime_evidence": [],
+      "outcome_refs": []
+    },
+    {
+      "id": "event-cache-churn",
+      "graph_nodes": [
+        "event.cache.host_evict",
+        "event.cache.device_evict",
+        "event.cache.backup_complete",
+        "event.cache.loadback_complete",
+        "event.arrival.window"
+      ],
+      "observation": "Host eviction episodes accompany later low prefix reuse and increased prefill work.",
+      "diagnosis": "Candidate host working-set churn, distinct from device eviction with retained backups.",
+      "alternatives": [
+        "Different request prefixes can lower reuse without eviction.",
+        "Device eviction alone need not destroy L2 reuse.",
+        "Component frees are logical units and duplicated across ranks."
+      ],
+      "check": "Compare component requested/freed units, matched arrival windows, cache counters and backup/loadback ack sequences; retain prior R22b high-reuse counterexample and backing confounders in the campaign overlay.",
+      "action": "Test host retention or concurrency only when eviction evidence and matched workload support churn; otherwise add missing tier/pool or request attribution.",
+      "expected": "Reduced host eviction associated with higher effective reuse and canonical throughput.",
+      "reject_if": "Reuse stays low without observed qualified host eviction, or serving/backing/workload changes explain the difference.",
+      "status": "Prospective conditional source-backed rule. No native event evidence or performance benefit yet; preserve prior explanation revisions and counterevidence.",
+      "runtime_evidence": [],
+      "outcome_refs": []
+    },
+    {
+      "id": "event-pressure-owners",
+      "graph_nodes": [
+        "event.queue.pressure_enter",
+        "event.queue.pressure_exit",
+        "event.decode.retraction"
+      ],
+      "observation": "A queue pressure episode persists while selected requests remain in the same lifecycle stage.",
+      "diagnosis": "Capacity pressure versus stalled ownership is unresolved until correlated with actual holders and safe releases.",
+      "alternatives": [
+        "Old owners can still progress.",
+        "Cancellation or flush can lower queue depth without useful service.",
+        "Router dispatch waiting may precede backend arrival and remains uninstrumented."
+      ],
+      "check": "Join exact process incarnation/rank and local monotonic interval with PD acquisition/release and stage histories; retain lost/untracked/unknown states. Observe completions in recovery window.",
+      "action": "Advancing owners: test capacity/service knob. Stalled or cancelled holders: resolve progress/cleanup dependency; do not merely raise capacity.",
+      "expected": "Pressure clears with useful completions and release of original reservations.",
+      "reject_if": "Recovery occurs through cancellations alone, loss hides releases, or event producer was inactive.",
+      "status": "Prospective conditional source-backed rule. No native event evidence or performance benefit yet; preserve prior explanation revisions and counterevidence.",
+      "runtime_evidence": [],
+      "outcome_refs": []
+    },
+    {
+      "id": "event-dispatch-change",
+      "graph_nodes": [
+        "event.decision.changed",
+        "event.queue.pressure_enter",
+        "event.queue.pressure_exit"
+      ],
+      "observation": "Observed forward or admission decision changes overlap a queue or service-rate episode.",
+      "diagnosis": "Candidate change in execution eligibility or admission gates, not proof of per-kernel cost.",
+      "alternatives": [
+        "One pass can visit several different gates.",
+        "Graph predicates can be checked more than once per forward.",
+        "Larger batch shapes or workload mix can alter both dispatch and service."
+      ],
+      "check": "Align decision transitions with existing numeric tuning summaries, forward counters, shapes and same-rank episode windows; use profiler only for unresolved exposed-cost attribution.",
+      "action": "Test the implicated graph/budget/cadence knob only after ruling out earlier gates and workload change.",
+      "expected": "Improved qualified canonical outcome with expected decision/queue mechanism shift.",
+      "reject_if": "Only gate names change, no useful service improvement, or per-layer replay counts are inferred from Python capture execution.",
+      "status": "Prospective conditional source-backed rule. No native event evidence or performance benefit yet; preserve prior explanation revisions and counterevidence.",
+      "runtime_evidence": [],
+      "outcome_refs": []
     }
   ],
   "policy": "Source-backed conditional rules are not causal performance predictions. Historical narratives are archived separately; immutable experiment predictions and canonical outcomes own empirical results. Current operational state belongs only to decisions/current.json.",
